@@ -8,7 +8,6 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 MODEL_PATH = "models/basma_yolo.pt"
 
 
-# Load YOLO model
 model = YOLO(MODEL_PATH)
 
 
@@ -24,10 +23,10 @@ class ClassroomProcessor(VideoProcessorBase):
             verbose=False
         )
 
-        annotated_image = results[0].plot()
+        image = results[0].plot()
 
         return frame.from_ndarray(
-            annotated_image,
+            image,
             format="bgr24"
         )
 
@@ -61,13 +60,12 @@ def render_live_classroom():
     )
 
     webrtc_streamer(
-        key="basma-classroom",
+        key="basma-camera",
         video_processor_factory=ClassroomProcessor,
         media_stream_constraints={
             "video": True,
             "audio": False
-        },
-        async_processing=True
+        }
     )
 
     st.markdown(
