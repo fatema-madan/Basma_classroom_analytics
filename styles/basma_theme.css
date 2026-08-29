@@ -28,8 +28,16 @@ body,
     font-family: "Manrope", sans-serif;
 }
 
+/* ============================================= */
+/* Fingerprint pattern — green background, beige  */
+/* fingerprint lines (same beige as the sidebar). */
+/* ============================================= */
+
 .stApp {
-    background-color: var(--background);
+    background-color: #6F9E87;
+    background-image: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjIwIiBoZWlnaHQ9IjIyMCIgdmlld0JveD0iMCAwIDIyMCAyMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPHJlY3Qgd2lkdGg9IjIyMCIgaGVpZ2h0PSIyMjAiIGZpbGw9IiM2RjlFODciLz4KICA8ZyBmaWxsPSJub25lIiBzdHJva2U9IiNGOEY4RjMiIHN0cm9rZS13aWR0aD0iMS42IiBvcGFjaXR5PSIwLjM1Ij4KICAgIDxwYXRoIGQ9Ik02MCA0MCBDMjAgNjAsIDIwIDE0MCwgNjAgMTcwIi8+CiAgICA8cGF0aCBkPSJNNzUgMzAgQzI1IDU1LCAyNSAxNTAsIDc1IDE4MiIvPgogICAgPHBhdGggZD0iTTkwIDI1IEMzMiA1MiwgMzIgMTU1LCA5MCAxOTAiLz4KICAgIDxwYXRoIGQ9Ik0xMDUgMjUgQzQyIDUyLCA0MiAxNTgsIDEwNSAxOTUiLz4KICAgIDxwYXRoIGQ9Ik0xMjAgMjggQzU1IDU1LCA1NSAxNjAsIDEyMCAxOTgiLz4KICAgIDxwYXRoIGQ9Ik0xMzMgMzMgQzcwIDU4LCA3MCAxNTgsIDEzMyAxOTYiLz4KICAgIDxwYXRoIGQ9Ik0xNDUgNDAgQzg4IDYyLCA4OCAxNTUsIDE0NSAxOTIiLz4KICAgIDxwYXRoIGQ9Ik0xNTUgNTAgQzEwNCA2OCwgMTA0IDE1MCwgMTU1IDE4NSIvPgogICAgPHBhdGggZD0iTTE2MyA2MiBDMTIwIDc2LCAxMjAgMTQyLCAxNjMgMTc2Ii8+CiAgICA8cGF0aCBkPSJNMTY5IDc4IEMxMzYgODgsIDEzNiAxMzAsIDE2OSAxNjIiLz4KICA8L2c+Cjwvc3ZnPgo=");
+    background-repeat: repeat;
+    background-size: 220px 220px;
     color: var(--text-primary);
 }
 
