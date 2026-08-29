@@ -110,6 +110,57 @@ def load_attendance():
     return attendance
 
 
+def save_attendance(student_id, date, time):
+    """
+    Record a student's attendance for today.
+    Returns True if this is the FIRST time the student was seen
+    today (so the caller knows whether to send a parent email),
+    or False if we're just updating their "last seen" time.
+    """
+
+    attendance = load_attendance()
+
+    already_marked = (
+        (attendance["student_id"].astype(str) == str(student_id))
+        & (attendance["date"] == date)
+    ).any()
+
+    if already_marked:
+
+        mask = (
+            (attendance["student_id"].astype(str) == str(student_id))
+            & (attendance["date"] == date)
+        )
+
+        attendance.loc[mask, "last_seen"] = time
+
+        attendance.to_csv(
+            ATTENDANCE_FILE,
+            index=False
+        )
+
+        return False
+
+    else:
+
+        new_record = {
+            "student_id": student_id,
+            "date": date,
+            "first_seen": time,
+            "last_seen": time,
+            "status": "Present"
+        }
+
+        attendance.loc[len(attendance)] = new_record
+
+        attendance.to_csv(
+            ATTENDANCE_FILE,
+            index=False
+        )
+
+        return True
+
+
 # =========================================================
 # ACTIVITY
 # =========================================================
