@@ -6,7 +6,7 @@ from utils.data_manager import load_students
 
 def render_sidebar():
 
-    logo_path = Path("assets/basma_logo.jpeg")
+    logo_path = Path("assets/basma_logo.svg")
 
     students = load_students()
 
