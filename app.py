@@ -2,6 +2,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from components.live_classroom import render_live_classroom
 from components.sidebar import render_sidebar
 from components.student_registration import render_student_registration
 from components.cards import render_metric_cards
@@ -108,24 +109,7 @@ elif selected_page == "🏠 Dashboard":
 
 elif selected_page == "📹 Live Classroom":
 
-    st.markdown(
-        '<div class="page-title">'
-        'Live Classroom'
-        '</div>',
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        '<div class="page-subtitle">'
-        'Monitor classroom activity in real time.'
-        '</div>',
-        unsafe_allow_html=True
-    )
-
-    st.info(
-        "Live Classroom will be connected to the camera and YOLO model here."
-    )
-
+    render_live_classroom()
 
 # =========================================
 # Student Profile
