@@ -93,31 +93,12 @@ elif selected_page == "🏠 Dashboard":
     with attendance_col:
         render_attendance_chart()
 
-    st.markdown(
-        '<div class="panel-title" style="margin-top:25px;">'
-        'Student Overview'
-        '</div>',
-        unsafe_allow_html=True
-    )
-
     profile_col, performance_col = st.columns([1.15, 1])
 
     with profile_col:
-
-        selected_date = st.date_input(
-            "Select Date"
-        )
-
-        selected_date_text = selected_date.strftime(
-            "%Y-%m-%d"
-        )
-
-        render_student_profile(
-            selected_date=selected_date_text
-        )
+        render_student_profile()
 
     with performance_col:
-
         render_performance_chart()
 
 
@@ -152,31 +133,7 @@ elif selected_page == "📹 Live Classroom":
 
 elif selected_page == "👤 Student Profile":
 
-    st.markdown(
-        '<div class="page-title">'
-        'Student Profile'
-        '</div>',
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        '<div class="page-subtitle">'
-        'View student information and activity.'
-        '</div>',
-        unsafe_allow_html=True
-    )
-
-    selected_date = st.date_input(
-        "Select Date"
-    )
-
-    selected_date_text = selected_date.strftime(
-        "%Y-%m-%d"
-    )
-
-    render_student_profile(
-        selected_date=selected_date_text
-    )
+    render_student_profile()
 
 
 # =========================================
