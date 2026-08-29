@@ -138,5 +138,5 @@ def render_student_registration():
                         )
 
                         st.info(
-                            "You can now start the classroom camera."
+                            "The student is now ready for attendance and activity analysis."
                         )
