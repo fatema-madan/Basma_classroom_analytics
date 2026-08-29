@@ -8,19 +8,6 @@ from streamlit_webrtc import (
 )
 
 
-st.set_page_config(
-    page_title="WebRTC Test",
-    layout="centered",
-)
-
-
-st.title("WebRTC Camera Test")
-
-st.write(
-    "If the camera works, you should see the live video below."
-)
-
-
 def video_frame_callback(frame: av.VideoFrame):
 
     image = frame.to_ndarray(
@@ -33,32 +20,35 @@ def video_frame_callback(frame: av.VideoFrame):
     )
 
 
-rtc_configuration = RTCConfiguration(
-    {
-        "iceServers": [
-            {
-                "urls": [
-                    "stun:stun.l.google.com:19302"
-                ]
-            }
-        ]
-    }
-)
+def render_live_classroom():
 
+    st.title("WebRTC Camera Test")
 
-webrtc_ctx = webrtc_streamer(
-    key="simple-camera-test",
+    rtc_configuration = RTCConfiguration(
+        {
+            "iceServers": [
+                {
+                    "urls": [
+                        "stun:stun.l.google.com:19302"
+                    ]
+                }
+            ]
+        }
+    )
 
-    mode=WebRtcMode.SENDRECV,
+    webrtc_streamer(
+        key="basma-camera-test",
 
-    rtc_configuration=rtc_configuration,
+        mode=WebRtcMode.SENDRECV,
 
-    media_stream_constraints={
-        "video": True,
-        "audio": False,
-    },
+        rtc_configuration=rtc_configuration,
 
-    video_frame_callback=video_frame_callback,
+        media_stream_constraints={
+            "video": True,
+            "audio": False,
+        },
 
-    async_processing=True,
-)
+        video_frame_callback=video_frame_callback,
+
+        async_processing=True,
+    )
