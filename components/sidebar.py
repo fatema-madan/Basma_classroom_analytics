@@ -24,24 +24,16 @@ def render_sidebar():
                 width=170
             )
 
-        elif small_logo_path.exists():
-            st.image(
-                str(small_logo_path),
-                width=160
-            )
-
         else:
+            # NOTE: removed the broken "elif small_logo_path.exists():"
+            # branch — small_logo_path was never defined anywhere in this
+            # file, so this would crash with a NameError whenever the
+            # main logo file was missing.
             st.markdown(
-                """
-                <div style="
-                    text-align: center;
-                    color: #4D7964;
-                    margin-bottom: 25px;
-                ">
-                    <h2>BASMA</h2>
-                    <small>AI Classroom Analytics</small>
-                </div>
-                """,
+                '<div style="text-align:center;color:#4D7964;margin-bottom:25px;">'
+                '<h2>BASMA</h2>'
+                '<small>AI Classroom Analytics</small>'
+                '</div>',
                 unsafe_allow_html=True
             )
 
@@ -63,17 +55,15 @@ def render_sidebar():
             label_visibility="collapsed"
         )
 
+        # IMPORTANT: no leading indentation before the HTML lines,
+        # otherwise Markdown treats it as a code block instead of HTML.
         st.markdown(
-            f"""
-            <div class="status-box">
-                <span class="status-dot">●</span>
-                &nbsp; System Online
-
-                <br><br>
-
-                👥 {student_count} registered students
-            </div>
-            """,
+            f'<div class="status-box">'
+            f'<span class="status-dot">●</span>'
+            f'&nbsp; System Online'
+            f'<br><br>'
+            f'👥 {student_count} registered students'
+            f'</div>',
             unsafe_allow_html=True
         )
 
