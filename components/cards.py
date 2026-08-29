@@ -72,24 +72,13 @@ def render_metric_cards():
     for column, metric in zip(columns, metrics):
 
         with column:
-
-            st.markdown(
-                f"""
-                <div class="metric-card">
-
-                    <div class="metric-icon">
-                        {metric["icon"]}
-                    </div>
-
-                    <div class="metric-label">
-                        {metric["label"]}
-                    </div>
-
-                    <div class="metric-value">
-                        {metric["value"]}
-                    </div>
-
-                </div>
-                """,
-                unsafe_allow_html=True
+            # IMPORTANT: no leading indentation before the HTML lines,
+            # otherwise Markdown treats it as a code block.
+            html = (
+                f'<div class="metric-card">'
+                f'<div class="metric-icon">{metric["icon"]}</div>'
+                f'<div class="metric-label">{metric["label"]}</div>'
+                f'<div class="metric-value">{metric["value"]}</div>'
+                f'</div>'
             )
+            st.markdown(html, unsafe_allow_html=True)
