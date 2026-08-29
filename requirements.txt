@@ -1,3 +1,12 @@
 streamlit>=1.51.0
-streamlit-webrtc==0.76.2
-av
+
+ultralytics
+opencv-python-headless
+numpy
+pandas
+Pillow
+
+insightface
+onnxruntime
+
+plotly
