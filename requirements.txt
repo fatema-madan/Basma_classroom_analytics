@@ -1,12 +1,9 @@
 streamlit>=1.51.0
-
 ultralytics
 opencv-python-headless
 numpy
 pandas
 Pillow
-
 insightface
 onnxruntime
-
 plotly
