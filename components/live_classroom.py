@@ -5,24 +5,28 @@ import av
 import streamlit as st
 
 from ultralytics import YOLO
+
 from streamlit_webrtc import (
     webrtc_streamer,
     VideoProcessorBase,
-    RTCConfiguration
+    RTCConfiguration,
+    WebRtcMode,
 )
 
 from utils.data_manager import (
     load_students,
     save_attendance,
-    save_activity
+    save_activity,
 )
 
 from utils.face_utils import (
     face_app,
-    find_student
+    find_student,
 )
 
-from utils.email_utils import send_attendance_email
+from utils.email_utils import (
+    send_attendance_email,
+)
 
 
 # =========================================================
@@ -36,7 +40,7 @@ ACTIVITY_SAVE_INTERVAL_SECONDS = 3
 
 
 # =========================================================
-# LOAD MODEL ONCE
+# LOAD YOLO MODEL
 # =========================================================
 
 @st.cache_resource
@@ -48,7 +52,7 @@ model = load_yolo_model()
 
 
 # =========================================================
-# CLASSROOM PROCESSOR
+# CLASSROOM VIDEO PROCESSOR
 # =========================================================
 
 class ClassroomProcessor(VideoProcessorBase):
@@ -58,108 +62,153 @@ class ClassroomProcessor(VideoProcessorBase):
         self.last_face_check = 0
         self.last_activity_save = 0
 
-        self.students = load_students()
+        try:
+            self.students = load_students()
+        except Exception as e:
+            print(f"Could not load students: {e}")
+            self.students = None
+
+    # -----------------------------------------------------
+    # PROCESS EACH CAMERA FRAME
+    # -----------------------------------------------------
 
     def recv(self, frame):
 
-        # -------------------------------------------------
-        # Convert frame
-        # -------------------------------------------------
-
+        # Convert WebRTC frame to OpenCV image
         image = frame.to_ndarray(format="bgr24")
 
-        # -------------------------------------------------
-        # YOLO
-        # -------------------------------------------------
+        # =================================================
+        # YOLO DETECTION
+        # =================================================
 
-        results = model(
-            image,
-            conf=0.40,
-            verbose=False
-        )
+        try:
 
-        annotated = results[0].plot()
+            results = model(
+                image,
+                conf=0.40,
+                verbose=False
+            )
 
-        now = time.time()
+            annotated = results[0].plot()
 
-        current_datetime = datetime.now()
+        except Exception as e:
 
-        today = current_datetime.strftime("%Y-%m-%d")
-        now_str = current_datetime.strftime("%H:%M:%S")
+            print(f"YOLO error: {e}")
 
-        # -------------------------------------------------
-        # SAVE ACTIVITIES
-        # Only every few seconds
-        # -------------------------------------------------
+            annotated = image
 
-        if now - self.last_activity_save >= ACTIVITY_SAVE_INTERVAL_SECONDS:
+            results = None
 
-            self.last_activity_save = now
+        # Current time
+        current_time = time.time()
+
+        now = datetime.now()
+
+        today = now.strftime("%Y-%m-%d")
+        now_str = now.strftime("%H:%M:%S")
+
+        # =================================================
+        # SAVE ACTIVITY
+        # =================================================
+
+        if (
+            results is not None
+            and current_time - self.last_activity_save
+            >= ACTIVITY_SAVE_INTERVAL_SECONDS
+        ):
+
+            self.last_activity_save = current_time
 
             detected_activities = set()
 
-            for box in results[0].boxes:
+            try:
 
-                class_id = int(box.cls[0])
+                for box in results[0].boxes:
 
-                activity_name = model.names[class_id]
+                    class_id = int(box.cls[0])
 
-                detected_activities.add(activity_name)
+                    activity_name = model.names[class_id]
 
-            for activity_name in detected_activities:
+                    detected_activities.add(
+                        activity_name
+                    )
 
-                save_activity(
-                    student_id="unknown",
-                    date=today,
-                    time=now_str,
-                    activity=activity_name
+                for activity_name in detected_activities:
+
+                    save_activity(
+                        student_id="unknown",
+                        date=today,
+                        time=now_str,
+                        activity=activity_name,
+                    )
+
+            except Exception as e:
+
+                print(
+                    f"Activity saving error: {e}"
                 )
 
-        # -------------------------------------------------
+        # =================================================
         # FACE RECOGNITION
-        # Only every 3 seconds
-        # -------------------------------------------------
+        # =================================================
 
-        if now - self.last_face_check >= FACE_CHECK_INTERVAL_SECONDS:
+        if (
+            current_time - self.last_face_check
+            >= FACE_CHECK_INTERVAL_SECONDS
+        ):
 
-            self.last_face_check = now
+            self.last_face_check = current_time
 
             try:
 
-                faces = face_app.get(image)
+                # If students could not be loaded,
+                # skip attendance processing.
+                if self.students is not None:
 
-                for face in faces:
+                    faces = face_app.get(image)
 
-                    student_id = find_student(
-                        face.embedding
-                    )
+                    for face in faces:
 
-                    if student_id is None:
-                        continue
-
-                    match = self.students[
-                        self.students["student_id"].astype(str)
-                        == str(student_id)
-                    ]
-
-                    if match.empty:
-                        continue
-
-                    student_row = match.iloc[0]
-
-                    is_first_detection_today = save_attendance(
-                        student_id=student_id,
-                        date=today,
-                        time=now_str
-                    )
-
-                    if is_first_detection_today:
-
-                        send_attendance_email(
-                            parent_email=student_row["parent_email"],
-                            student_name=student_row["student_name"],
-                            time_str=now_str
+                        student_id = find_student(
+                            face.embedding
                         )
+
+                        if student_id is None:
+                            continue
+
+                        match = self.students[
+                            self.students[
+                                "student_id"
+                            ].astype(str)
+                            == str(student_id)
+                        ]
+
+                        if match.empty:
+                            continue
+
+                        student_row = match.iloc[0]
+
+                        # Save attendance
+                        is_first_detection_today = (
+                            save_attendance(
+                                student_id=student_id,
+                                date=today,
+                                time=now_str,
+                            )
+                        )
+
+                        # Send email only once
+                        if is_first_detection_today:
+
+                            send_attendance_email(
+                                parent_email=student_row[
+                                    "parent_email"
+                                ],
+                                student_name=student_row[
+                                    "student_name"
+                                ],
+                                time_str=now_str,
+                            )
 
             except Exception as e:
 
@@ -167,13 +216,13 @@ class ClassroomProcessor(VideoProcessorBase):
                     f"Face recognition error: {e}"
                 )
 
-        # -------------------------------------------------
-        # Return annotated frame
-        # -------------------------------------------------
+        # =================================================
+        # RETURN PROCESSED FRAME
+        # =================================================
 
         return av.VideoFrame.from_ndarray(
             annotated,
-            format="bgr24"
+            format="bgr24",
         )
 
 
@@ -183,21 +232,27 @@ class ClassroomProcessor(VideoProcessorBase):
 
 def render_live_classroom():
 
+    # =====================================================
+    # PAGE HEADER
+    # =====================================================
+
     st.markdown(
-        '<div class="page-title">Live Classroom</div>',
-        unsafe_allow_html=True
+        '<div class="page-title">'
+        'Live Classroom'
+        '</div>',
+        unsafe_allow_html=True,
     )
 
     st.markdown(
         '<div class="page-subtitle">'
         'Monitor classroom activity in real time.'
         '</div>',
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
-    # -----------------------------------------------------
-    # WebRTC configuration
-    # -----------------------------------------------------
+    # =====================================================
+    # WEBRTC CONFIGURATION
+    # =====================================================
 
     rtc_configuration = RTCConfiguration(
         {
@@ -206,14 +261,19 @@ def render_live_classroom():
                     "urls": [
                         "stun:stun.l.google.com:19302"
                     ]
-                }
+                },
+                {
+                    "urls": [
+                        "stun:stun1.l.google.com:19302"
+                    ]
+                },
             ]
         }
     )
 
-    # -----------------------------------------------------
-    # Camera panel
-    # -----------------------------------------------------
+    # =====================================================
+    # CAMERA PANEL
+    # =====================================================
 
     with st.container(border=True):
 
@@ -221,13 +281,18 @@ def render_live_classroom():
             '<div class="panel-title">'
             'Classroom Camera'
             '</div>',
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
+        # =================================================
+        # WEBRTC CAMERA
+        # =================================================
+
         webrtc_streamer(
+
             key="basma-classroom-camera",
 
-            mode="SENDRECV",
+            mode=WebRtcMode.SENDRECV,
 
             rtc_configuration=rtc_configuration,
 
@@ -235,12 +300,11 @@ def render_live_classroom():
 
             media_stream_constraints={
                 "video": True,
-                "audio": False
+                "audio": False,
             },
 
             async_processing=True,
 
-            desired_playing_state=True,
         )
 
         st.caption(
