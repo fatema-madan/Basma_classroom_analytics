@@ -36,7 +36,7 @@ body,
 /* Sidebar */
 
 section[data-testid="stSidebar"] {
-    background-color: var(--card);
+    background-color: var(--background);
     border-right: 1px solid var(--border);
 }
 
