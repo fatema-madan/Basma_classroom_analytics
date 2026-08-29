@@ -1,29 +1,21 @@
-import streamlit as st
 from pathlib import Path
 
+import streamlit as st
+
 from components.sidebar import render_sidebar
+from components.student_registration import render_student_registration
 from components.cards import render_metric_cards
 from components.charts import (
     render_class_activity_chart,
-    render_attendance_chart
+    render_attendance_chart,
+    render_performance_chart
 )
-from components.student_registration import (
-    render_student_registration
-)
-from components.student_profile import (
-    render_student_profile
-)
-from components.activity_timeline import (
-    render_activity_timeline
-)
-from components.live_classroom import (
-    render_live_classroom
-)
+from components.student_profile import render_student_profile
 
 
-# ==================================================
-# Page Setup
-# ==================================================
+# =========================================
+# Page Configuration
+# =========================================
 
 st.set_page_config(
     page_title="BASMA — AI Classroom Analytics",
@@ -33,9 +25,9 @@ st.set_page_config(
 )
 
 
-# ==================================================
+# =========================================
 # Load Theme
-# ==================================================
+# =========================================
 
 theme_path = Path("styles/basma_theme.css")
 
@@ -55,18 +47,27 @@ if theme_path.exists():
     )
 
 
-# ==================================================
+# =========================================
 # Sidebar
-# ==================================================
+# =========================================
 
 selected_page = render_sidebar()
 
 
-# ==================================================
-# Dashboard
-# ==================================================
+# =========================================
+# Student Registration
+# =========================================
 
-if selected_page == "🏠 Dashboard":
+if selected_page == "📝 Student Registration":
+
+    render_student_registration()
+
+
+# =========================================
+# Dashboard
+# =========================================
+
+elif selected_page == "🏠 Dashboard":
 
     st.markdown(
         '<div class="page-title">'
@@ -84,8 +85,6 @@ if selected_page == "🏠 Dashboard":
 
     render_metric_cards()
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
     chart_col, attendance_col = st.columns([2.2, 1])
 
     with chart_col:
@@ -94,68 +93,139 @@ if selected_page == "🏠 Dashboard":
     with attendance_col:
         render_attendance_chart()
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="panel-title" style="margin-top:25px;">'
+        'Student Overview'
+        '</div>',
+        unsafe_allow_html=True
+    )
 
-    render_activity_timeline()
+    profile_col, performance_col = st.columns([1.15, 1])
+
+    with profile_col:
+
+        selected_date = st.date_input(
+            "Select Date"
+        )
+
+        selected_date_text = selected_date.strftime(
+            "%Y-%m-%d"
+        )
+
+        render_student_profile(
+            selected_date=selected_date_text
+        )
+
+    with performance_col:
+
+        render_performance_chart()
 
 
-# ==================================================
+# =========================================
 # Live Classroom
-# ==================================================
+# =========================================
 
 elif selected_page == "📹 Live Classroom":
 
-    render_live_classroom()
-
-
-# ==================================================
-# Student Profile
-# ==================================================
-
-elif selected_page == "👤 Student Profile":
-
-    render_student_profile()
-
-
-# ==================================================
-# Analytics
-# ==================================================
-
-elif selected_page == "📊 Analytics":
-
     st.markdown(
-        '<div class="page-title">Analytics</div>',
+        '<div class="page-title">'
+        'Live Classroom'
+        '</div>',
         unsafe_allow_html=True
     )
 
     st.markdown(
         '<div class="page-subtitle">'
-        "Analyze classroom activity and attendance."
+        'Monitor classroom activity in real time.'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    st.info(
+        "Live Classroom will be connected to the camera and YOLO model here."
+    )
+
+
+# =========================================
+# Student Profile
+# =========================================
+
+elif selected_page == "👤 Student Profile":
+
+    st.markdown(
+        '<div class="page-title">'
+        'Student Profile'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        '<div class="page-subtitle">'
+        'View student information and activity.'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    selected_date = st.date_input(
+        "Select Date"
+    )
+
+    selected_date_text = selected_date.strftime(
+        "%Y-%m-%d"
+    )
+
+    render_student_profile(
+        selected_date=selected_date_text
+    )
+
+
+# =========================================
+# Analytics
+# =========================================
+
+elif selected_page == "📊 Analytics":
+
+    st.markdown(
+        '<div class="page-title">'
+        'Analytics'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        '<div class="page-subtitle">'
+        'Analyze classroom attendance and student activities.'
         '</div>',
         unsafe_allow_html=True
     )
 
     render_class_activity_chart()
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
 
-    render_attendance_chart()
+    with col1:
+        render_attendance_chart()
+
+    with col2:
+        render_performance_chart()
 
 
-# ==================================================
+# =========================================
 # Settings
-# ==================================================
+# =========================================
 
 elif selected_page == "⚙️ Settings":
 
     st.markdown(
-        '<div class="page-title">Settings</div>',
+        '<div class="page-title">'
+        'Settings'
+        '</div>',
         unsafe_allow_html=True
     )
 
     st.markdown(
         '<div class="page-subtitle">'
-        "Manage BASMA application settings."
+        'Manage BASMA system settings.'
         '</div>',
         unsafe_allow_html=True
     )
@@ -167,7 +237,7 @@ elif selected_page == "⚙️ Settings":
 
     st.markdown(
         '<div class="panel-title">'
-        "Application"
+        'System Settings'
         '</div>',
         unsafe_allow_html=True
     )
@@ -177,24 +247,8 @@ elif selected_page == "⚙️ Settings":
     )
 
     st.write(
-        "YOLO model:"
+        "YOLO classroom activity detection is enabled."
     )
-
-    model_path = Path(
-        "models/basma_yolo.pt"
-    )
-
-    if model_path.exists():
-
-        st.success(
-            "YOLO model is ready."
-        )
-
-    else:
-
-        st.warning(
-            "YOLO model not found."
-        )
 
     st.markdown(
         '</div>',
