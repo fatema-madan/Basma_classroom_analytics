@@ -93,32 +93,21 @@ def render_student_profile():
             unsafe_allow_html=True
         )
 
+        # IMPORTANT: single-line HTML strings below — no leading
+        # indentation, otherwise Markdown renders them as a raw
+        # code block instead of parsing the HTML.
+
         st.markdown(
-            f"""
-            <div class="student-name">
-                {student["student_name"]}
-            </div>
-            """,
+            f'<div class="student-name">{student["student_name"]}</div>',
             unsafe_allow_html=True
         )
 
         st.markdown(
-            f"""
-            <div class="student-info">
-
-                Student ID:
-                {student["student_id"]}
-                <br>
-
-                Parent Email:
-                {student["parent_email"]}
-                <br>
-
-                Parent Phone:
-                {student["parent_phone"]}
-
-            </div>
-            """,
+            f'<div class="student-info">'
+            f'Student ID: {student["student_id"]}<br>'
+            f'Parent Email: {student["parent_email"]}<br>'
+            f'Parent Phone: {student["parent_phone"]}'
+            f'</div>',
             unsafe_allow_html=True
         )
 
@@ -143,19 +132,9 @@ def render_student_profile():
         else:
 
             st.markdown(
-                """
-                <div style="
-                    display:inline-block;
-                    background:#F4E8E6;
-                    color:#A56F69;
-                    border-radius:20px;
-                    padding:5px 12px;
-                    font-size:11px;
-                    font-weight:700;
-                ">
-                    Absent
-                </div>
-                """,
+                '<div style="display:inline-block;background:#F4E8E6;'
+                'color:#A56F69;border-radius:20px;padding:5px 12px;'
+                'font-size:11px;font-weight:700;">Absent</div>',
                 unsafe_allow_html=True
             )
 
@@ -232,20 +211,12 @@ def render_student_profile():
 
         for _, row in student_activities.iterrows():
 
+            # Single-line HTML again — same fix as above.
             st.markdown(
-                f"""
-                <div class="timeline-item">
-
-                    <span class="timeline-time">
-                        {row["time"]}
-                    </span>
-
-                    <span class="timeline-activity">
-                        {row["activity"]}
-                    </span>
-
-                </div>
-                """,
+                f'<div class="timeline-item">'
+                f'<span class="timeline-time">{row["time"]}</span>'
+                f'<span class="timeline-activity">{row["activity"]}</span>'
+                f'</div>',
                 unsafe_allow_html=True
             )
 
