@@ -1,53 +1,60 @@
 from pathlib import Path
 import streamlit as st
 
+from utils.data_manager import load_students
+
 
 def render_sidebar():
-    """
-    Render the BASMA sidebar and return the selected page.
-    """
 
     logo_path = Path("assets/basma_logo.png")
     small_logo_path = Path("assets/basma_logo_small.png")
 
+    students = load_students()
+
+    if students.empty:
+        student_count = 0
+    else:
+        student_count = len(students)
+
     with st.sidebar:
 
-        # Display the main BASMA logo
+        # BASMA Logo
         if logo_path.exists():
             st.image(
                 str(logo_path),
-                use_container_width=True
+                width=170
             )
 
-        # Use the small logo if the main logo is unavailable
         elif small_logo_path.exists():
             st.image(
                 str(small_logo_path),
                 width=160
             )
 
-        # Fallback text logo
         else:
-            st.markdown("""
-            <div style="
-                text-align: center;
-                color: #527B68;
-                margin-bottom: 25px;
-            ">
-                <h2>BASMA</h2>
-                <small>AI Classroom Analytics</small>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                """
+                <div style="
+                    text-align: center;
+                    color: #4D7964;
+                    margin-bottom: 25px;
+                ">
+                    <h2>BASMA</h2>
+                    <small>AI Classroom Analytics</small>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
         st.markdown(
             '<div class="nav-title">Workspace</div>',
             unsafe_allow_html=True
         )
 
-        # Sidebar navigation
         selected_page = st.radio(
             "Navigation",
             [
+                "📝 Student Registration",
                 "🏠 Dashboard",
                 "📹 Live Classroom",
                 "👤 Student Profile",
@@ -57,13 +64,18 @@ def render_sidebar():
             label_visibility="collapsed"
         )
 
-        st.markdown("""
-        <div class="status-box">
-            <span class="status-dot">●</span>
-            &nbsp; System Online
-            <br><br>
-            👥 1,248 registered students
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            f"""
+            <div class="status-box">
+                <span class="status-dot">●</span>
+                &nbsp; System Online
+
+                <br><br>
+
+                👥 {student_count} registered students
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     return selected_page
