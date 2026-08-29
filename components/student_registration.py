@@ -22,124 +22,121 @@ def render_student_registration():
         unsafe_allow_html=True
     )
 
-    st.markdown(
-        '<div class="panel">',
-        unsafe_allow_html=True
-    )
+    # Using a native Streamlit bordered container instead of a
+    # hand-rolled "<div class='panel'>...</div>" split across two
+    # separate st.markdown calls (that pattern leaves an empty ghost
+    # box, since Streamlit renders each markdown call as its own
+    # independent HTML fragment).
+    with st.container(border=True):
 
-    student_id = st.text_input("Student ID")
+        student_id = st.text_input("Student ID")
 
-    student_name = st.text_input("Student Name")
+        student_name = st.text_input("Student Name")
 
-    parent_email = st.text_input("Parent Email")
+        parent_email = st.text_input("Parent Email")
 
-    parent_phone = st.text_input("Parent Phone")
+        parent_phone = st.text_input("Parent Phone")
 
-    photo = st.file_uploader(
-        "Student Photo",
-        type=["jpg", "jpeg", "png"]
-    )
-
-    if photo is not None:
-        st.image(
-            photo,
-            width=180
+        photo = st.file_uploader(
+            "Student Photo",
+            type=["jpg", "jpeg", "png"]
         )
 
-    register_button = st.button(
-        "Register Student",
-        type="primary"
-    )
-
-    if register_button:
-
-        if (
-            not student_id
-            or not student_name
-            or not parent_email
-            or not parent_phone
-            or photo is None
-        ):
-
-            st.warning(
-                "Please complete all fields and upload a photo."
+        if photo is not None:
+            st.image(
+                photo,
+                width=180
             )
 
-        else:
+        register_button = st.button(
+            "Register Student",
+            type="primary"
+        )
 
-            students = load_students()
+        if register_button:
 
             if (
-                not students.empty
-                and students["student_id"]
-                .astype(str)
-                .eq(str(student_id))
-                .any()
+                not student_id
+                or not student_name
+                or not parent_email
+                or not parent_phone
+                or photo is None
             ):
 
-                st.error(
-                    "This Student ID is already registered."
+                st.warning(
+                    "Please complete all fields and upload a photo."
                 )
 
             else:
 
-                PHOTO_FOLDER.mkdir(
-                    parents=True,
-                    exist_ok=True
-                )
+                students = load_students()
 
-                photo_path = (
-                    PHOTO_FOLDER
-                    / f"{student_id}.jpg"
-                )
-
-                with open(
-                    photo_path,
-                    "wb"
-                ) as file:
-
-                    file.write(
-                        photo.getbuffer()
-                    )
-
-                embedding = create_embedding(
-                    str(photo_path)
-                )
-
-                if embedding is None:
-
-                    photo_path.unlink(
-                        missing_ok=True
-                    )
+                if (
+                    not students.empty
+                    and students["student_id"]
+                    .astype(str)
+                    .eq(str(student_id))
+                    .any()
+                ):
 
                     st.error(
-                        "No clear face was found in the photo."
+                        "This Student ID is already registered."
                     )
 
                 else:
 
-                    save_student(
-                        student_id=student_id,
-                        student_name=student_name,
-                        parent_email=parent_email,
-                        parent_phone=parent_phone,
-                        photo_path=str(photo_path)
+                    PHOTO_FOLDER.mkdir(
+                        parents=True,
+                        exist_ok=True
                     )
 
-                    save_embedding(
-                        student_id,
-                        embedding
+                    photo_path = (
+                        PHOTO_FOLDER
+                        / f"{student_id}.jpg"
                     )
 
-                    st.success(
-                        f"{student_name} has been registered successfully!"
+                    with open(
+                        photo_path,
+                        "wb"
+                    ) as file:
+
+                        file.write(
+                            photo.getbuffer()
+                        )
+
+                    embedding = create_embedding(
+                        str(photo_path)
                     )
 
-                    st.info(
-                        "You can now start the classroom camera."
-                    )
+                    if embedding is None:
 
-    st.markdown(
-        '</div>',
-        unsafe_allow_html=True
-    )
+                        photo_path.unlink(
+                            missing_ok=True
+                        )
+
+                        st.error(
+                            "No clear face was found in the photo."
+                        )
+
+                    else:
+
+                        save_student(
+                            student_id=student_id,
+                            student_name=student_name,
+                            parent_email=parent_email,
+                            parent_phone=parent_phone,
+                            photo_path=str(photo_path)
+                        )
+
+                        save_embedding(
+                            student_id,
+                            embedding
+                        )
+
+                        st.success(
+                            f"{student_name} has been registered successfully!"
+                        )
+
+                        st.info(
+                            "You can now start the classroom camera."
+                        )
