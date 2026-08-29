@@ -3,7 +3,8 @@ pandas
 plotly
 opencv-python
 ultralytics
-face-recognition
 numpy
 Pillow
 streamlit-webrtc
+insightface
+onnxruntime
