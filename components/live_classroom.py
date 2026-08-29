@@ -1,7 +1,6 @@
 import time
 from datetime import datetime
 import streamlit as st
-import cv2
 from ultralytics import YOLO
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 from utils.data_manager import (
