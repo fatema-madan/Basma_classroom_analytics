@@ -5,7 +5,7 @@ import streamlit as st
 import cv2
 
 from ultralytics import YOLO
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 
 from utils.data_manager import (
     load_students,
@@ -18,11 +18,7 @@ from utils.email_utils import send_attendance_email
 
 MODEL_PATH = "models/basma_yolo.pt"
 
-# Only run face recognition every N seconds per frame stream —
-# it's a lot heavier than the YOLO activity model, so we don't
-# want to run it on every single video frame.
 FACE_CHECK_INTERVAL_SECONDS = 3
-
 
 model = YOLO(MODEL_PATH)
 
@@ -31,17 +27,13 @@ class ClassroomProcessor(VideoProcessorBase):
 
     def __init__(self):
         self.last_face_check = 0
-        # Cache student lookup once per session instead of hitting
-        # the CSV on every frame.
         self.students = load_students()
 
     def recv(self, frame):
 
         image = frame.to_ndarray(format="bgr24")
 
-        # ---------------------------------------------
-        # 1. Activity detection (existing behaviour)
-        # ---------------------------------------------
+        # Activity detection
         results = model(
             image,
             conf=0.40,
@@ -60,16 +52,13 @@ class ClassroomProcessor(VideoProcessorBase):
             activity_name = model.names[class_id]
 
             save_activity(
-                student_id="unknown",  # activity model doesn't ID students
+                student_id="unknown",
                 date=today,
                 time=now_str,
                 activity=activity_name
             )
 
-        # ---------------------------------------------
-        # 2. Face recognition + attendance + parent email
-        #    (throttled — heavy to run every frame)
-        # ---------------------------------------------
+        # Face recognition (throttled)
         current_time = time.time()
 
         if current_time - self.last_face_check >= FACE_CHECK_INTERVAL_SECONDS:
@@ -135,8 +124,20 @@ def render_live_classroom():
             unsafe_allow_html=True
         )
 
+        # ✅ إضافة RTCConfiguration
+        rtc_configuration = RTCConfiguration(
+            {"iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+                {"urls": ["stun:stun1.l.google.com:19302"]},
+                {"urls": ["stun:stun2.l.google.com:19302"]},
+                {"urls": ["stun:stun3.l.google.com:19302"]},
+                {"urls": ["stun:stun4.l.google.com:19302"]}
+            ]}
+        )
+
         webrtc_streamer(
             key="basma-camera",
+            rtc_configuration=rtc_configuration,  # ✅ الإضافة الوحيدة
             video_processor_factory=ClassroomProcessor,
             media_stream_constraints={
                 "video": True,
