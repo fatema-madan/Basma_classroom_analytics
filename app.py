@@ -107,7 +107,7 @@ elif selected_page == "🏠 Dashboard":
 # Live Classroom
 # =========================================
 
-elif selected_page == "📹 Live Classroom":
+elif selected_page == "📹 Classroom Video Analysis":
 
     render_live_classroom()
 
