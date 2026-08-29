@@ -8,7 +8,6 @@ from ultralytics import YOLO
 
 from streamlit_webrtc import (
     webrtc_streamer,
-    VideoProcessorBase,
     RTCConfiguration,
     WebRtcMode,
 )
@@ -35,8 +34,12 @@ from utils.email_utils import (
 
 MODEL_PATH = "models/basma_yolo.pt"
 
-FACE_CHECK_INTERVAL_SECONDS = 3
-ACTIVITY_SAVE_INTERVAL_SECONDS = 3
+FACE_CHECK_INTERVAL = 5
+ACTIVITY_SAVE_INTERVAL = 3
+
+# Process YOLO every N frames
+# This prevents the camera from freezing on Streamlit Cloud.
+YOLO_FRAME_SKIP = 2
 
 
 # =========================================================
@@ -44,68 +47,103 @@ ACTIVITY_SAVE_INTERVAL_SECONDS = 3
 # =========================================================
 
 @st.cache_resource
-def load_yolo_model():
+def load_model():
+
     return YOLO(MODEL_PATH)
 
 
-model = load_yolo_model()
+model = load_model()
 
 
 # =========================================================
-# CLASSROOM VIDEO PROCESSOR
+# CLASSROOM PROCESSOR
 # =========================================================
 
-class ClassroomProcessor(VideoProcessorBase):
+class ClassroomProcessor:
 
     def __init__(self):
+
+        self.frame_count = 0
 
         self.last_face_check = 0
         self.last_activity_save = 0
 
+        self.last_annotated_frame = None
+
         try:
+
             self.students = load_students()
+
         except Exception as e:
-            print(f"Could not load students: {e}")
-            self.students = None
 
-    # -----------------------------------------------------
-    # PROCESS EACH CAMERA FRAME
-    # -----------------------------------------------------
-
-    def recv(self, frame):
-
-        # Convert WebRTC frame to OpenCV image
-        image = frame.to_ndarray(format="bgr24")
-
-        # =================================================
-        # YOLO DETECTION
-        # =================================================
-
-        try:
-
-            results = model(
-                image,
-                conf=0.40,
-                verbose=False
+            print(
+                f"Student loading error: {e}"
             )
 
-            annotated = results[0].plot()
+            self.students = None
 
-        except Exception as e:
+    # =====================================================
+    # PROCESS FRAME
+    # =====================================================
 
-            print(f"YOLO error: {e}")
+    def process(self, frame):
 
-            annotated = image
+        image = frame.to_ndarray(
+            format="bgr24"
+        )
 
-            results = None
+        self.frame_count += 1
 
-        # Current time
         current_time = time.time()
 
         now = datetime.now()
 
-        today = now.strftime("%Y-%m-%d")
-        now_str = now.strftime("%H:%M:%S")
+        today = now.strftime(
+            "%Y-%m-%d"
+        )
+
+        now_str = now.strftime(
+            "%H:%M:%S"
+        )
+
+        # =================================================
+        # YOLO
+        # =================================================
+
+        if (
+            self.frame_count % YOLO_FRAME_SKIP == 0
+            or self.last_annotated_frame is None
+        ):
+
+            try:
+
+                results = model.predict(
+                    source=image,
+                    conf=0.40,
+                    imgsz=640,
+                    verbose=False,
+                    device="cpu",
+                )
+
+                annotated = results[0].plot()
+
+                self.last_annotated_frame = annotated
+
+            except Exception as e:
+
+                print(
+                    f"YOLO error: {e}"
+                )
+
+                annotated = image
+
+                results = None
+
+        else:
+
+            annotated = self.last_annotated_frame
+
+            results = None
 
         # =================================================
         # SAVE ACTIVITY
@@ -113,21 +151,26 @@ class ClassroomProcessor(VideoProcessorBase):
 
         if (
             results is not None
-            and current_time - self.last_activity_save
-            >= ACTIVITY_SAVE_INTERVAL_SECONDS
+            and
+            current_time - self.last_activity_save
+            >= ACTIVITY_SAVE_INTERVAL
         ):
 
             self.last_activity_save = current_time
 
-            detected_activities = set()
-
             try:
+
+                detected_activities = set()
 
                 for box in results[0].boxes:
 
-                    class_id = int(box.cls[0])
+                    class_id = int(
+                        box.cls[0]
+                    )
 
-                    activity_name = model.names[class_id]
+                    activity_name = model.names[
+                        class_id
+                    ]
 
                     detected_activities.add(
                         activity_name
@@ -145,7 +188,7 @@ class ClassroomProcessor(VideoProcessorBase):
             except Exception as e:
 
                 print(
-                    f"Activity saving error: {e}"
+                    f"Activity error: {e}"
                 )
 
         # =================================================
@@ -154,18 +197,18 @@ class ClassroomProcessor(VideoProcessorBase):
 
         if (
             current_time - self.last_face_check
-            >= FACE_CHECK_INTERVAL_SECONDS
+            >= FACE_CHECK_INTERVAL
         ):
 
             self.last_face_check = current_time
 
             try:
 
-                # If students could not be loaded,
-                # skip attendance processing.
                 if self.students is not None:
 
-                    faces = face_app.get(image)
+                    faces = face_app.get(
+                        image
+                    )
 
                     for face in faces:
 
@@ -188,8 +231,7 @@ class ClassroomProcessor(VideoProcessorBase):
 
                         student_row = match.iloc[0]
 
-                        # Save attendance
-                        is_first_detection_today = (
+                        first_detection = (
                             save_attendance(
                                 student_id=student_id,
                                 date=today,
@@ -197,8 +239,7 @@ class ClassroomProcessor(VideoProcessorBase):
                             )
                         )
 
-                        # Send email only once
-                        if is_first_detection_today:
+                        if first_detection:
 
                             send_attendance_email(
                                 parent_email=student_row[
@@ -217,7 +258,7 @@ class ClassroomProcessor(VideoProcessorBase):
                 )
 
         # =================================================
-        # RETURN PROCESSED FRAME
+        # RETURN FRAME
         # =================================================
 
         return av.VideoFrame.from_ndarray(
@@ -227,13 +268,13 @@ class ClassroomProcessor(VideoProcessorBase):
 
 
 # =========================================================
-# LIVE CLASSROOM PAGE
+# LIVE CLASSROOM
 # =========================================================
 
 def render_live_classroom():
 
     # =====================================================
-    # PAGE HEADER
+    # HEADER
     # =====================================================
 
     st.markdown(
@@ -251,7 +292,7 @@ def render_live_classroom():
     )
 
     # =====================================================
-    # WEBRTC CONFIGURATION
+    # WEBRTC CONFIG
     # =====================================================
 
     rtc_configuration = RTCConfiguration(
@@ -272,7 +313,13 @@ def render_live_classroom():
     )
 
     # =====================================================
-    # CAMERA PANEL
+    # CREATE PROCESSOR
+    # =====================================================
+
+    processor = ClassroomProcessor()
+
+    # =====================================================
+    # CAMERA
     # =====================================================
 
     with st.container(border=True):
@@ -284,19 +331,14 @@ def render_live_classroom():
             unsafe_allow_html=True,
         )
 
-        # =================================================
-        # WEBRTC CAMERA
-        # =================================================
-
         webrtc_streamer(
-
             key="basma-classroom-camera",
 
             mode=WebRtcMode.SENDRECV,
 
             rtc_configuration=rtc_configuration,
 
-            video_processor_factory=ClassroomProcessor,
+            video_frame_callback=processor.process,
 
             media_stream_constraints={
                 "video": True,
@@ -304,7 +346,6 @@ def render_live_classroom():
             },
 
             async_processing=True,
-
         )
 
         st.caption(
