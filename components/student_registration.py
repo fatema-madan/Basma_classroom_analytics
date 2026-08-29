@@ -27,34 +27,32 @@ def render_student_registration():
         unsafe_allow_html=True
     )
 
-    student_id = st.text_input(
-        "Student ID"
-    )
+    student_id = st.text_input("Student ID")
 
-    student_name = st.text_input(
-        "Student Name"
-    )
+    student_name = st.text_input("Student Name")
 
-    parent_email = st.text_input(
-        "Parent Email"
-    )
+    parent_email = st.text_input("Parent Email")
 
-    parent_phone = st.text_input(
-        "Parent Phone"
-    )
+    parent_phone = st.text_input("Parent Phone")
 
     photo = st.file_uploader(
         "Student Photo",
         type=["jpg", "jpeg", "png"]
     )
 
+    if photo is not None:
+        st.image(
+            photo,
+            width=180
+        )
+
     register_button = st.button(
-        "Register Student"
+        "Register Student",
+        type="primary"
     )
 
     if register_button:
 
-        # Check required fields
         if (
             not student_id
             or not student_name
@@ -67,85 +65,79 @@ def render_student_registration():
                 "Please complete all fields and upload a photo."
             )
 
-            st.stop()
+        else:
 
-        # Load current students
-        students = load_students()
+            students = load_students()
 
-        # Check duplicate student ID
-        if (
-            students["student_id"]
-            .astype(str)
-            .eq(str(student_id))
-            .any()
-        ):
+            if (
+                not students.empty
+                and students["student_id"]
+                .astype(str)
+                .eq(str(student_id))
+                .any()
+            ):
 
-            st.error(
-                "This Student ID is already registered."
-            )
+                st.error(
+                    "This Student ID is already registered."
+                )
 
-            st.stop()
+            else:
 
-        # Create photo folder
-        PHOTO_FOLDER.mkdir(
-            parents=True,
-            exist_ok=True
-        )
+                PHOTO_FOLDER.mkdir(
+                    parents=True,
+                    exist_ok=True
+                )
 
-        # Save photo
-        photo_path = (
-            PHOTO_FOLDER
-            / f"{student_id}.jpg"
-        )
+                photo_path = (
+                    PHOTO_FOLDER
+                    / f"{student_id}.jpg"
+                )
 
-        with open(
-            photo_path,
-            "wb"
-        ) as file:
+                with open(
+                    photo_path,
+                    "wb"
+                ) as file:
 
-            file.write(
-                photo.getbuffer()
-            )
+                    file.write(
+                        photo.getbuffer()
+                    )
 
-        # Create face embedding
-        embedding = create_embedding(
-            str(photo_path)
-        )
+                embedding = create_embedding(
+                    str(photo_path)
+                )
 
-        if embedding is None:
+                if embedding is None:
 
-            photo_path.unlink(
-                missing_ok=True
-            )
+                    photo_path.unlink(
+                        missing_ok=True
+                    )
 
-            st.error(
-                "No clear face was found in the photo."
-            )
+                    st.error(
+                        "No clear face was found in the photo."
+                    )
 
-            st.stop()
+                else:
 
-        # Save student information
-        save_student(
-            student_id=student_id,
-            student_name=student_name,
-            parent_email=parent_email,
-            parent_phone=parent_phone,
-            photo_path=str(photo_path)
-        )
+                    save_student(
+                        student_id=student_id,
+                        student_name=student_name,
+                        parent_email=parent_email,
+                        parent_phone=parent_phone,
+                        photo_path=str(photo_path)
+                    )
 
-        # Save face embedding
-        save_embedding(
-            student_id,
-            embedding
-        )
+                    save_embedding(
+                        student_id,
+                        embedding
+                    )
 
-        st.success(
-            f"{student_name} has been registered successfully!"
-        )
+                    st.success(
+                        f"{student_name} has been registered successfully!"
+                    )
 
-        st.info(
-            "You can now start the classroom camera."
-        )
+                    st.info(
+                        "You can now start the classroom camera."
+                    )
 
     st.markdown(
         '</div>',
