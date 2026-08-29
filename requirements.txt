@@ -1,12 +1,12 @@
-streamlit>=1.40
-streamlit-webrtc>=0.74.0
+streamlit>=1.51
+streamlit-webrtc>=0.76.2
 
 numpy>=2.0.2,<2.3
 opencv-python-headless==4.12.0.88
 
 ultralytics>=8.4.0
-
 mediapipe
+
 pandas
 plotly
 Pillow
