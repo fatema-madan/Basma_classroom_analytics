@@ -1,0 +1,212 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+:root {
+    --background: #F8F8F3;
+    --card: #FFFFFF;
+
+    --primary: #6F9E87;
+    --dark-green: #4D7964;
+    --light-green: #DDEDE3;
+
+    --lavender: #B9AFD8;
+    --light-blue: #DCEBF0;
+    --light-yellow: #E8E6C7;
+
+    --text-primary: #34433B;
+    --text-secondary: #8A948D;
+
+    --border: #E9EDE8;
+    --success: #8BC59C;
+    --danger: #D9A5A0;
+}
+
+/* Global Styles */
+
+html,
+body,
+[class*="css"] {
+    font-family: "Manrope", sans-serif;
+}
+
+.stApp {
+    background-color: var(--background);
+    color: var(--text-primary);
+}
+
+/* Sidebar */
+
+section[data-testid="stSidebar"] {
+    background-color: var(--card);
+    border-right: 1px solid var(--border);
+}
+
+section[data-testid="stSidebar"] .block-container {
+    padding: 1.5rem 1.1rem;
+}
+
+/* BASMA Logo */
+
+section[data-testid="stSidebar"] img {
+    max-width: 170px;
+    margin: 0 auto 20px auto;
+    display: block;
+}
+
+/* Page Header */
+
+.page-title {
+    color: var(--text-primary);
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 3px;
+}
+
+.page-subtitle {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 25px;
+}
+
+/* Sidebar Navigation */
+
+.nav-title {
+    color: var(--text-secondary);
+    font-size: 10px;
+    margin: 18px 0 8px 4px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* System Status */
+
+.status-box {
+    background-color: #F1F8F3;
+    border-radius: 12px;
+    padding: 12px;
+    margin-top: 28px;
+    color: var(--dark-green);
+    font-size: 11px;
+}
+
+.status-dot {
+    color: var(--success);
+    font-size: 14px;
+}
+
+/* Metric Cards */
+
+.metric-card {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 17px;
+    min-height: 112px;
+    box-shadow: 0 5px 18px rgba(76, 113, 91, 0.06);
+}
+
+.metric-icon {
+    float: right;
+    background-color: var(--light-green);
+    color: var(--dark-green);
+    border-radius: 10px;
+    padding: 8px;
+    font-size: 15px;
+}
+
+.metric-label {
+    color: var(--text-secondary);
+    font-size: 11px;
+    margin-bottom: 8px;
+}
+
+.metric-value {
+    color: var(--dark-green);
+    font-size: 27px;
+    font-weight: 800;
+}
+
+/* Main Panels */
+
+.panel {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    margin-top: 20px;
+    box-shadow: 0 5px 18px rgba(76, 113, 91, 0.05);
+}
+
+.panel-title {
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 13px;
+}
+
+/* Student Profile */
+
+.student-card {
+    background-color: #F5FAF6;
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.student-name {
+    color: var(--text-primary);
+    font-weight: 800;
+    font-size: 16px;
+    margin-bottom: 8px;
+}
+
+.student-info {
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 2;
+}
+
+.present {
+    display: inline-block;
+    background-color: var(--light-green);
+    color: var(--dark-green);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    margin: 4px 0;
+}
+
+/* Activity Timeline */
+
+.timeline-item {
+    border-left: 2px solid var(--light-green);
+    padding: 7px 0 7px 14px;
+    margin-left: 7px;
+    font-size: 11px;
+}
+
+.timeline-time {
+    color: var(--primary);
+    font-weight: 700;
+}
+
+.timeline-activity {
+    color: var(--text-primary);
+    margin-left: 8px;
+}
+
+/* Classroom Preview */
+
+.camera-image {
+    width: 100%;
+    border-radius: 12px;
+}
+
+/* Streamlit Cleanup */
+
+div[data-testid="stDecoration"] {
+    display: none;
+}
+
+button[kind="secondary"] {
+    border-radius: 10px;
+}
