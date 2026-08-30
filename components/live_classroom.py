@@ -1,4 +1,3 @@
-```python
 from pathlib import Path
 from datetime import datetime
 import threading
@@ -664,4 +663,4 @@ def render_live_classroom():
         st.warning(
             f"Activity display warning: {e}"
         )
-```
+
