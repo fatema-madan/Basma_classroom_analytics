@@ -1,26 +1,38 @@
-import tempfile
+```python
 from pathlib import Path
 from datetime import datetime
+import threading
 
+import av
 import cv2
 import numpy as np
 import pandas as pd
 import streamlit as st
 
 from ultralytics import YOLO
+from streamlit_webrtc import (
+    webrtc_streamer,
+    WebRtcMode,
+    RTCConfiguration,
+    VideoProcessorBase,
+)
 
 from utils.data_manager import (
     load_students,
     load_attendance,
     save_attendance,
-    save_activity
+    save_activity,
 )
 
 from utils.face_utils import (
     face_app,
-    load_embeddings
+    load_embeddings,
 )
 
+
+# =========================================================
+# SETTINGS
+# =========================================================
 
 MODEL_PATH = Path("models/basma_yolo.pt")
 
@@ -28,11 +40,22 @@ FACE_INTERVAL = 10
 FACE_THRESHOLD = 0.45
 YOLO_CONFIDENCE = 0.40
 
+# How often to save the same activity
+ACTIVITY_SAVE_INTERVAL = 30
+
+
+# =========================================================
+# LOAD YOLO MODEL
+# =========================================================
 
 @st.cache_resource
 def load_model():
     return YOLO(str(MODEL_PATH))
 
+
+# =========================================================
+# FIND STUDENT
+# =========================================================
 
 def find_student(face_embedding, embeddings):
 
@@ -79,6 +102,10 @@ def find_student(face_embedding, embeddings):
     return None
 
 
+# =========================================================
+# GET STUDENT NAME
+# =========================================================
+
 def get_student_name(student_id, students):
 
     if students.empty:
@@ -97,292 +124,379 @@ def get_student_name(student_id, students):
     )
 
 
-def render_live_classroom():
+# =========================================================
+# WEBRTC CONFIG
+# =========================================================
 
-    st.markdown(
-        '<div class="page-title">'
-        'Classroom Video Analysis'
-        '</div>',
-        unsafe_allow_html=True
-    )
+RTC_CONFIGURATION = RTCConfiguration(
+    {
+        "iceServers": [
+            {
+                "urls": [
+                    "stun:stun.l.google.com:19302"
+                ]
+            }
+        ]
+    }
+)
 
-    st.markdown(
-        '<div class="page-subtitle">'
-        'Upload a classroom video to analyze attendance and student activities.'
-        '</div>',
-        unsafe_allow_html=True
-    )
 
-    st.divider()
+# =========================================================
+# LIVE VIDEO PROCESSOR
+# =========================================================
 
-    uploaded_file = st.file_uploader(
-        "📹 Upload Classroom Video",
-        type=["mp4", "mov", "avi", "mkv"]
-    )
+class BASMALiveProcessor(VideoProcessorBase):
 
-    if uploaded_file is None:
+    def __init__(self):
 
-        st.info(
-            "Upload a classroom video to start the analysis."
+        self.model = load_model()
+
+        self.students = load_students()
+
+        self.embeddings = load_embeddings()
+
+        self.frame_count = 0
+
+        self.detected_students = set()
+
+        self.last_faces = []
+
+        self.activity_counter = 0
+
+        self.running = True
+
+        self.lock = threading.Lock()
+
+
+    # -----------------------------------------------------
+    # PROCESS EVERY VIDEO FRAME
+    # -----------------------------------------------------
+
+    def recv(self, frame):
+
+        img = frame.to_ndarray(
+            format="bgr24"
         )
 
-        return
-
-    st.markdown("### 🎥 Video Preview")
-
-    st.video(uploaded_file)
-
-    if not st.button(
-        "🔍 Analyze Video",
-        type="primary",
-        use_container_width=True
-    ):
-        return
-
-    analyze_video(uploaded_file)
+        self.frame_count += 1
 
 
-def analyze_video(uploaded_file):
-
-    progress = st.progress(0)
-
-    status = st.empty()
-
-    students = load_students()
-    embeddings = load_embeddings()
-
-    if not embeddings:
-
-        st.error(
-            "No face embeddings were found. "
-            "Please register students first."
-        )
-
-        return
-
-    model = load_model()
-
-    suffix = Path(
-        uploaded_file.name
-    ).suffix
-
-    with tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=suffix
-    ) as temp_file:
-
-        temp_file.write(
-            uploaded_file.getbuffer()
-        )
-
-        input_path = Path(
-            temp_file.name
-        )
-
-    output_path = Path(
-        tempfile.mktemp(
-            suffix=".mp4"
-        )
-    )
-
-    cap = cv2.VideoCapture(
-        str(input_path)
-    )
-
-    if not cap.isOpened():
-
-        st.error(
-            "Could not open the uploaded video."
-        )
-
-        return
-
-    fps = cap.get(
-        cv2.CAP_PROP_FPS
-    )
-
-    if fps <= 0:
-        fps = 25
-
-    total_frames = int(
-        cap.get(
-            cv2.CAP_PROP_FRAME_COUNT
-        )
-    )
-
-    width = int(
-        cap.get(
-            cv2.CAP_PROP_FRAME_WIDTH
-        )
-    )
-
-    height = int(
-        cap.get(
-            cv2.CAP_PROP_FRAME_HEIGHT
-        )
-    )
-
-    fourcc = cv2.VideoWriter_fourcc(
-        *"mp4v"
-    )
-
-    writer = cv2.VideoWriter(
-        str(output_path),
-        fourcc,
-        fps,
-        (width, height)
-    )
-
-    today = datetime.now().strftime(
-        "%Y-%m-%d"
-    )
-
-    detected_students = set()
-
-    activity_counts = {}
-
-    frame_number = 0
-
-    while True:
-
-        success, frame = cap.read()
-
-        if not success:
-            break
-
-        frame_number += 1
-
-        current_time = datetime.now().strftime(
-            "%H:%M:%S"
-        )
-
-        # =============================================
-        # FACE RECOGNITION
-        # =============================================
-
-        if (
-            frame_number % FACE_INTERVAL == 0
-            or frame_number == 1
-        ):
-
-            try:
-
-                faces = face_app.get(
-                    frame
-                )
-
-                for face in faces:
-
-                    student_id = find_student(
-                        face.embedding,
-                        embeddings
-                    )
-
-                    if student_id is None:
-                        continue
-
-                    detected_students.add(
-                        student_id
-                    )
-
-                    save_attendance(
-                        student_id=student_id,
-                        date=today,
-                        time=current_time
-                    )
-
-            except Exception as e:
-
-                status.warning(
-                    f"Face recognition warning: {e}"
-                )
-
-        # =============================================
-        # YOLO
-        # =============================================
+        # =================================================
+        # YOLO ACTIVITY DETECTION
+        # =================================================
 
         try:
 
-            results = model.predict(
-                source=frame,
+            results = self.model.predict(
+                source=img,
                 conf=YOLO_CONFIDENCE,
                 imgsz=640,
                 device="cpu",
-                verbose=False
+                verbose=False,
             )
 
             result = results[0]
 
             annotated_frame = result.plot()
 
-            if result.boxes is not None:
+        except Exception:
 
-                for box in result.boxes:
+            annotated_frame = img
 
-                    class_id = int(
-                        box.cls[0]
+
+        # =================================================
+        # FACE RECOGNITION
+        # =================================================
+
+        if (
+            self.frame_count % FACE_INTERVAL == 0
+            or self.frame_count == 1
+        ):
+
+            try:
+
+                faces = face_app.get(img)
+
+                current_faces = []
+
+                for face in faces:
+
+                    student_id = find_student(
+                        face.embedding,
+                        self.embeddings
                     )
 
-                    activity = model.names[
-                        class_id
-                    ]
+                    if student_id is None:
+                        continue
 
-                    activity_counts[
-                        activity
-                    ] = (
-                        activity_counts.get(
-                            activity,
-                            0
-                        ) + 1
+                    student_name = get_student_name(
+                        student_id,
+                        self.students
                     )
 
-        except Exception as e:
+                    current_faces.append(
+                        {
+                            "student_id": student_id,
+                            "name": student_name,
+                            "bbox": face.bbox
+                        }
+                    )
 
-            annotated_frame = frame
+                    self.detected_students.add(
+                        student_id
+                    )
 
-            status.warning(
-                f"YOLO warning: {e}"
+                    # -------------------------------------
+                    # SAVE ATTENDANCE
+                    # -------------------------------------
+
+                    now = datetime.now()
+
+                    save_attendance(
+                        student_id=student_id,
+                        date=now.strftime(
+                            "%Y-%m-%d"
+                        ),
+                        time=now.strftime(
+                            "%H:%M:%S"
+                        )
+                    )
+
+                self.last_faces = current_faces
+
+            except Exception:
+
+                pass
+
+
+        # =================================================
+        # DRAW STUDENT NAME
+        # =================================================
+
+        for face_info in self.last_faces:
+
+            bbox = face_info["bbox"]
+
+            student_name = face_info["name"]
+
+            x1, y1, x2, y2 = [
+                int(value)
+                for value in bbox
+            ]
+
+            # Make sure coordinates stay inside image
+
+            x1 = max(0, x1)
+            y1 = max(0, y1)
+            x2 = min(
+                annotated_frame.shape[1] - 1,
+                x2
+            )
+            y2 = min(
+                annotated_frame.shape[0] - 1,
+                y2
             )
 
-        writer.write(
-            annotated_frame
+            # ---------------------------------------------
+            # Face box
+            # ---------------------------------------------
+
+            cv2.rectangle(
+                annotated_frame,
+                (x1, y1),
+                (x2, y2),
+                (0, 255, 0),
+                2
+            )
+
+            # ---------------------------------------------
+            # Student name
+            # ---------------------------------------------
+
+            label = f"{student_name} | Present"
+
+            cv2.rectangle(
+                annotated_frame,
+                (
+                    x1,
+                    max(0, y1 - 30)
+                ),
+                (
+                    x1 + max(
+                        180,
+                        len(label) * 9
+                    ),
+                    y1
+                ),
+                (0, 255, 0),
+                -1
+            )
+
+            cv2.putText(
+                annotated_frame,
+                label,
+                (
+                    x1 + 5,
+                    y1 - 8
+                ),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 0, 0),
+                2
+            )
+
+
+        # =================================================
+        # SAVE ACTIVITY LOG
+        # =================================================
+
+        self.activity_counter += 1
+
+        if (
+            self.activity_counter
+            >= ACTIVITY_SAVE_INTERVAL
+        ):
+
+            self.activity_counter = 0
+
+            try:
+
+                if result.boxes is not None:
+
+                    now = datetime.now()
+
+                    for box in result.boxes:
+
+                        class_id = int(
+                            box.cls[0]
+                        )
+
+                        activity = self.model.names[
+                            class_id
+                        ]
+
+                        # ---------------------------------
+                        # If a student is recognized,
+                        # associate activity with them.
+                        #
+                        # For now, assign the activity
+                        # to all recognized students
+                        # visible during the live session.
+                        # ---------------------------------
+
+                        for student_id in (
+                            self.detected_students
+                        ):
+
+                            save_activity(
+                                student_id=student_id,
+                                date=now.strftime(
+                                    "%Y-%m-%d"
+                                ),
+                                time=now.strftime(
+                                    "%H:%M:%S"
+                                ),
+                                activity=activity
+                            )
+
+            except Exception:
+
+                pass
+
+
+        # =================================================
+        # RETURN FRAME
+        # =================================================
+
+        return av.VideoFrame.from_ndarray(
+            annotated_frame,
+            format="bgr24"
         )
 
-        if total_frames > 0:
 
-            percentage = (
-                frame_number
-                / total_frames
-            )
+# =========================================================
+# RENDER LIVE CLASSROOM
+# =========================================================
 
-            progress.progress(
-                min(
-                    percentage,
-                    1.0
-                )
-            )
-
-            status.write(
-                f"Analyzing video... "
-                f"{int(percentage * 100)}%"
-            )
-
-    cap.release()
-
-    writer.release()
-
-    progress.progress(1.0)
-
-    status.success(
-        "Analysis completed successfully!"
-    )
-
-    # =============================================
-    # SUMMARY
-    # =============================================
+def render_live_classroom():
 
     st.markdown(
-        "### 📊 Analysis Summary"
+        '<div class="page-title">'
+        'Live Classroom'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        '<div class="page-subtitle">'
+        'Monitor student attendance and classroom activities in real time.'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    st.divider()
+
+
+    # =====================================================
+    # CAMERA
+    # =====================================================
+
+    st.markdown(
+        "### 🎥 Classroom Camera"
+    )
+
+    st.info(
+        "Click START and allow camera access "
+        "when your browser asks."
+    )
+
+
+    ctx = webrtc_streamer(
+
+        key="basma-live-classroom",
+
+        mode=WebRtcMode.SENDRECV,
+
+        video_processor_factory=BASMALiveProcessor,
+
+        rtc_configuration=RTC_CONFIGURATION,
+
+        media_stream_constraints={
+            "video": True,
+            "audio": False
+        },
+
+        async_processing=True
+    )
+
+
+    # =====================================================
+    # STATUS
+    # =====================================================
+
+    if ctx.state.playing:
+
+        st.success(
+            "🟢 Live camera is running. "
+            "BASMA is detecting activities and attendance."
+        )
+
+    else:
+
+        st.warning(
+            "🟡 Camera is stopped."
+        )
+
+
+    st.divider()
+
+
+    # =====================================================
+    # LIVE INFORMATION
+    # =====================================================
+
+    st.markdown(
+        "### 🤖 AI Detection"
     )
 
     col1, col2, col3 = st.columns(3)
@@ -390,150 +504,164 @@ def analyze_video(uploaded_file):
     with col1:
 
         st.metric(
-            "Students Detected",
-            len(detected_students)
+            "Model",
+            "YOLO"
         )
 
     with col2:
 
-        duration = (
-            total_frames / fps
-        )
-
         st.metric(
-            "Video Duration",
-            f"{duration:.1f}s"
+            "Confidence",
+            f"{YOLO_CONFIDENCE:.0%}"
         )
 
     with col3:
 
-        total_activities = sum(
-            activity_counts.values()
-        )
-
         st.metric(
-            "Activity Detections",
-            total_activities
+            "Mode",
+            "Real-Time"
         )
 
-    # =============================================
-    # ATTENDANCE
-    # =============================================
+
+    # =====================================================
+    # TODAY'S ATTENDANCE
+    # =====================================================
 
     st.markdown(
-        "### 👥 Attendance"
+        "### 👥 Today's Attendance"
     )
 
-    attendance = load_attendance()
+    try:
 
-    today_attendance = attendance[
-        attendance["date"].astype(str)
-        == today
-    ]
+        attendance = load_attendance()
 
-    if today_attendance.empty:
+        students = load_students()
+
+        today = datetime.now().strftime(
+            "%Y-%m-%d"
+        )
+
+        if not attendance.empty:
+
+            today_attendance = attendance[
+                attendance["date"].astype(str)
+                == today
+            ].copy()
+
+        else:
+
+            today_attendance = pd.DataFrame()
+
+
+        if today_attendance.empty:
+
+            st.info(
+                "No students have been recognized yet."
+            )
+
+        else:
+
+            names = []
+
+            for student_id in (
+                today_attendance["student_id"]
+            ):
+
+                names.append(
+                    get_student_name(
+                        student_id,
+                        students
+                    )
+                )
+
+            today_attendance.insert(
+                1,
+                "student_name",
+                names
+            )
+
+            st.dataframe(
+                today_attendance,
+                use_container_width=True,
+                hide_index=True
+            )
+
+    except Exception as e:
 
         st.warning(
-            "No students were recognized in the video."
+            f"Attendance display warning: {e}"
         )
 
-    else:
 
-        attendance_display = (
-            today_attendance.copy()
+    # =====================================================
+    # CURRENT ACTIVITIES
+    # =====================================================
+
+    st.markdown(
+        "### 📚 Activity Log"
+    )
+
+    try:
+
+        from utils.data_manager import load_activity
+
+        activities = load_activity()
+
+        today = datetime.now().strftime(
+            "%Y-%m-%d"
         )
 
-        names = []
+        if not activities.empty:
 
-        for student_id in (
-            attendance_display["student_id"]
-        ):
+            today_activities = activities[
+                activities["date"].astype(str)
+                == today
+            ].copy()
 
-            names.append(
-                get_student_name(
-                    student_id,
-                    students
+            if not today_activities.empty:
+
+                students = load_students()
+
+                names = []
+
+                for student_id in (
+                    today_activities["student_id"]
+                ):
+
+                    names.append(
+                        get_student_name(
+                            student_id,
+                            students
+                        )
+                    )
+
+                today_activities.insert(
+                    1,
+                    "student_name",
+                    names
                 )
+
+                st.dataframe(
+                    today_activities.tail(20),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            else:
+
+                st.info(
+                    "No activities recorded yet."
+                )
+
+        else:
+
+            st.info(
+                "No activities recorded yet."
             )
 
-        attendance_display.insert(
-            1,
-            "student_name",
-            names
+    except Exception as e:
+
+        st.warning(
+            f"Activity display warning: {e}"
         )
-
-        st.dataframe(
-            attendance_display,
-            use_container_width=True,
-            hide_index=True
-        )
-
-    # =============================================
-    # ANNOTATED VIDEO
-    # =============================================
-
-    st.markdown(
-        "### 🎬 AI Annotated Video"
-    )
-
-    if output_path.exists():
-
-        with open(
-            output_path,
-            "rb"
-        ) as video_file:
-
-            video_bytes = video_file.read()
-
-        st.video(
-            video_bytes
-        )
-
-        st.download_button(
-            "⬇️ Download Annotated Video",
-            data=video_bytes,
-            file_name="basma_annotated_video.mp4",
-            mime="video/mp4",
-            use_container_width=True
-        )
-
-    # =============================================
-    # ACTIVITY SUMMARY
-    # =============================================
-
-    st.markdown(
-        "### 📚 Activity Summary"
-    )
-
-    if activity_counts:
-
-        activity_rows = []
-
-        for activity, count in sorted(
-            activity_counts.items(),
-            key=lambda x: x[1],
-            reverse=True
-        ):
-
-            activity_rows.append(
-                {
-                    "Activity": activity,
-                    "Detections": count
-                }
-            )
-
-        activity_df = pd.DataFrame(
-            activity_rows
-        )
-
-        st.dataframe(
-            activity_df,
-            use_container_width=True,
-            hide_index=True
-        )
-
-    else:
-
-        st.info(
-            "No activities were detected."
-        )
+```
