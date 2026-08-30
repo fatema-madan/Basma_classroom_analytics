@@ -47,7 +47,7 @@ def render_sidebar():
             [
                 "📝 Student Registration",
                 "🏠 Dashboard",
-                "📹 Classroom Video Analysis",
+                "📹 Live Classroom",
                 "👤 Student Profile",
                 "📊 Analytics",
                 "⚙️ Settings"
