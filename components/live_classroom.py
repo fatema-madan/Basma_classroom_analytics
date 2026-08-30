@@ -2,8 +2,17 @@ import av
 import cv2
 import streamlit as st
 
-
+from ultralytics import YOLO
 from streamlit_webrtc import webrtc_streamer
+
+
+# =========================================================
+# LOAD YOLO MODEL
+# =========================================================
+
+@st.cache_resource
+def load_model():
+    return YOLO("models/basma_yolo.pt")
 
 
 # =========================================================
@@ -15,12 +24,14 @@ def render_live_classroom():
     st.title("🎥 BASMA — Live Classroom")
 
     st.write(
-        "Live classroom camera with real-time detection."
+        "Monitor classroom activities in real time."
     )
 
     st.info(
         "Click START and allow camera access."
     )
+
+    model = load_model()
 
 
     # =====================================================
@@ -31,47 +42,40 @@ def render_live_classroom():
 
         def recv(self, frame):
 
-            # Get frame from browser camera
+            # ---------------------------------------------
+            # Get LIVE camera frame
+            # ---------------------------------------------
+
             frm = frame.to_ndarray(
                 format="bgr24"
             )
 
+
             # ---------------------------------------------
-            # TEST BOUNDING BOX
-            # ---------------------------------------------
-            # This is only to test that the live camera
-            # and video processing are working.
-            #
-            # Later we replace this with YOLO.
+            # YOLO DETECTION
             # ---------------------------------------------
 
-            height, width, _ = frm.shape
-
-            x1 = int(width * 0.25)
-            y1 = int(height * 0.20)
-
-            x2 = int(width * 0.75)
-            y2 = int(height * 0.80)
-
-            cv2.rectangle(
+            results = model.predict(
                 frm,
-                (x1, y1),
-                (x2, y2),
-                (0, 255, 0),
-                3
+                conf=0.40,
+                verbose=False
             )
 
-            cv2.putText(
-                frm,
-                "BASMA LIVE",
-                (30, 50),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 255, 0),
-                2
-            )
 
-            # Return processed frame
+            # ---------------------------------------------
+            # DRAW BOUNDING BOXES
+            # ---------------------------------------------
+
+            if len(results) > 0:
+
+                frm = results[0].plot()
+
+
+            # ---------------------------------------------
+            # Return the SAME live frame
+            # with YOLO boxes on top
+            # ---------------------------------------------
+
             return av.VideoFrame.from_ndarray(
                 frm,
                 format="bgr24"
@@ -79,7 +83,7 @@ def render_live_classroom():
 
 
     # =====================================================
-    # WEBRTC CAMERA
+    # LIVE CAMERA
     # =====================================================
 
     webrtc_streamer(
