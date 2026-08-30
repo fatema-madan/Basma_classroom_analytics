@@ -2,7 +2,7 @@ import av
 import cv2
 import time
 import threading
-import numpy as np
+
 import streamlit as st
 
 from datetime import datetime
@@ -17,8 +17,6 @@ from streamlit_webrtc import (
 
 from utils.data_manager import (
     load_students,
-    load_attendance,
-    load_activity,
     save_attendance,
     save_activity,
 )
@@ -26,6 +24,8 @@ from utils.data_manager import (
 from utils.face_utils import (
     face_app,
     load_embeddings,
+    find_student,
+    build_embeddings_from_students,
 )
 
 
@@ -39,116 +39,51 @@ YOLO_CONFIDENCE = 0.40
 
 FACE_THRESHOLD = 0.45
 
-# Face recognition every 2 seconds
-FACE_INTERVAL = 2.0
+FACE_INTERVAL = 1.0
 
-# Save activity every 3 seconds
 ACTIVITY_INTERVAL = 3.0
 
 
 # =========================================================
-# LOAD YOLO MODEL
+# LOAD YOLO
 # =========================================================
 
 @st.cache_resource
-def load_my_model():
+def load_yolo_model():
 
-    return YOLO(MODEL_PATH)
+    return YOLO(
+        MODEL_PATH
+    )
 
 
 # =========================================================
-# LOAD STUDENT DATA
+# LOAD FACE EMBEDDINGS
 # =========================================================
 
 @st.cache_resource
-def load_student_data():
+def load_face_data():
 
     students = load_students()
 
     embeddings = load_embeddings()
 
+
+    # If embeddings file doesn't exist,
+    # create it automatically.
+    if not embeddings:
+
+        embeddings = (
+            build_embeddings_from_students(
+                students
+            )
+        )
+
+
     return students, embeddings
 
 
 # =========================================================
-# FIND STUDENT FROM EMBEDDING
-# =========================================================
-
-def find_student(
-    face_embedding,
-    embeddings,
-    threshold=FACE_THRESHOLD
-):
-
-    if embeddings is None:
-        return None
-
-    if len(embeddings) == 0:
-        return None
-
-    current_embedding = np.asarray(
-        face_embedding,
-        dtype=np.float32
-    )
-
-    current_norm = np.linalg.norm(
-        current_embedding
-    )
-
-    if current_norm == 0:
-        return None
-
-    current_embedding = (
-        current_embedding / current_norm
-    )
-
-    best_student = None
-
-    best_score = -1
-
-
-    for student_id, saved_embedding in embeddings.items():
-
-        saved_embedding = np.asarray(
-            saved_embedding,
-            dtype=np.float32
-        )
-
-        saved_norm = np.linalg.norm(
-            saved_embedding
-        )
-
-        if saved_norm == 0:
-            continue
-
-        saved_embedding = (
-            saved_embedding / saved_norm
-        )
-
-        score = float(
-            np.dot(
-                current_embedding,
-                saved_embedding
-            )
-        )
-
-        if score > best_score:
-
-            best_score = score
-
-            best_student = student_id
-
-
-    if best_score >= threshold:
-
-        return best_student
-
-
-    return None
-
-
-# =========================================================
-# GET STUDENT NAME
+# STUDENT NAME
 # =========================================================
 
 def get_student_name(
@@ -156,25 +91,22 @@ def get_student_name(
     student_id
 ):
 
-    if students is None:
-        return str(student_id)
-
     if students.empty:
+
         return str(student_id)
 
-    if "student_id" not in students.columns:
-        return str(student_id)
 
     rows = students[
-        students["student_id"].astype(str)
+        students["student_id"]
+        .astype(str)
         == str(student_id)
     ]
 
+
     if rows.empty:
+
         return str(student_id)
 
-    if "student_name" not in rows.columns:
-        return str(student_id)
 
     return str(
         rows.iloc[0]["student_name"]
@@ -182,7 +114,7 @@ def get_student_name(
 
 
 # =========================================================
-# WEBRTC CONFIGURATION
+# WEBRTC
 # =========================================================
 
 RTC_CONFIGURATION = RTCConfiguration(
@@ -199,7 +131,7 @@ RTC_CONFIGURATION = RTCConfiguration(
 
 
 # =========================================================
-# LIVE VIDEO PROCESSOR
+# VIDEO PROCESSOR
 # =========================================================
 
 class BASMAVideoProcessor(
@@ -208,44 +140,47 @@ class BASMAVideoProcessor(
 
     def __init__(self):
 
-        # -----------------------------------------------
-        # Load model
-        # -----------------------------------------------
-
-        self.model = load_my_model()
-
-
-        # -----------------------------------------------
-        # Load students + face embeddings
-        # -----------------------------------------------
+        self.model = load_yolo_model()
 
         (
             self.students,
             self.embeddings
-        ) = load_student_data()
+        ) = load_face_data()
 
 
         # -----------------------------------------------
-        # Timing
-        # -----------------------------------------------
-
-        self.last_face_time = 0
-
-        self.last_activity_time = 0
-
-
-        # -----------------------------------------------
-        # Students recognized during this session
+        # Attendance
         # -----------------------------------------------
 
         self.present_students = set()
 
 
         # -----------------------------------------------
-        # Prevent duplicate activity records
+        # Face recognition timing
         # -----------------------------------------------
 
-        self.last_saved_activity = {}
+        self.last_face_time = 0
+
+
+        # -----------------------------------------------
+        # Cached recognized faces
+        # -----------------------------------------------
+
+        self.recognized_faces = []
+
+
+        # -----------------------------------------------
+        # Activity timing
+        # -----------------------------------------------
+
+        self.last_activity_time = 0
+
+
+        # -----------------------------------------------
+        # Prevent duplicate activities
+        # -----------------------------------------------
+
+        self.last_activity_saved = {}
 
 
         # -----------------------------------------------
@@ -256,19 +191,22 @@ class BASMAVideoProcessor(
 
 
     # =====================================================
-    # SAVE ATTENDANCE
+    # ATTENDANCE
     # =====================================================
 
-    def mark_present(
+    def mark_attendance(
         self,
         student_id
     ):
 
-        student_id = str(student_id)
+        student_id = str(
+            student_id
+        )
 
 
-        # Already marked during this session
-        if student_id in self.present_students:
+        if student_id in (
+            self.present_students
+        ):
 
             return
 
@@ -292,134 +230,207 @@ class BASMAVideoProcessor(
                 time=current_time
             )
 
+
             self.present_students.add(
                 student_id
             )
 
+
         except Exception as e:
 
             print(
-                "Attendance save error:",
+                "Attendance error:",
                 e
             )
 
 
     # =====================================================
-    # FACE RECOGNITION
+    # FACE DETECTION + RECOGNITION
     # =====================================================
 
-    def process_faces(
+    def detect_faces(
         self,
-        image,
-        output
+        frame
     ):
 
         current_time = time.time()
 
 
-        # -----------------------------------------------
-        # Don't run face recognition on every frame
-        # -----------------------------------------------
-
+        # Don't run InsightFace on every frame
         if (
-            current_time - self.last_face_time
+            current_time
+            - self.last_face_time
             < FACE_INTERVAL
         ):
 
-            return output
+            return
 
 
-        self.last_face_time = current_time
+        self.last_face_time = (
+            current_time
+        )
 
 
         try:
 
-            faces = face_app.get(image)
+            faces = face_app.get(
+                frame
+            )
 
         except Exception as e:
 
             print(
-                "Face recognition error:",
+                "Face detection error:",
                 e
             )
 
-            return output
+            return
 
 
-        # -----------------------------------------------
-        # Process detected faces
-        # -----------------------------------------------
+        new_faces = []
+
 
         for face in faces:
 
-            embedding = getattr(
-                face,
-                "embedding",
-                None
-            )
+            # -------------------------------------------
+            # Face bounding box
+            # -------------------------------------------
 
-            if embedding is None:
-                continue
+            x1, y1, x2, y2 = [
+                int(value)
+                for value in face.bbox
+            ]
 
+
+            # -------------------------------------------
+            # Recognition
+            # -------------------------------------------
 
             student_id = find_student(
-                embedding,
-                self.embeddings
+                face.embedding,
+                threshold=FACE_THRESHOLD
             )
 
 
-            # Unknown face
-            if student_id is None:
-                continue
+            if student_id is not None:
+
+                student_id = str(
+                    student_id
+                )
+
+                name = get_student_name(
+                    self.students,
+                    student_id
+                )
 
 
-            student_id = str(
-                student_id
+                # ---------------------------------------
+                # Attendance
+                # ---------------------------------------
+
+                self.mark_attendance(
+                    student_id
+                )
+
+
+                new_faces.append(
+                    {
+                        "box": (
+                            x1,
+                            y1,
+                            x2,
+                            y2
+                        ),
+                        "name": name,
+                        "student_id": student_id,
+                        "known": True,
+                    }
+                )
+
+
+            else:
+
+                new_faces.append(
+                    {
+                        "box": (
+                            x1,
+                            y1,
+                            x2,
+                            y2
+                        ),
+                        "name": "Unknown",
+                        "student_id": None,
+                        "known": False,
+                    }
+                )
+
+
+        # Keep the latest face detections
+        self.recognized_faces = (
+            new_faces
+        )
+
+
+    # =====================================================
+    # DRAW FACES
+    # =====================================================
+
+    def draw_faces(
+        self,
+        frame
+    ):
+
+        for face in (
+            self.recognized_faces
+        ):
+
+            x1, y1, x2, y2 = (
+                face["box"]
             )
 
 
-            student_name = get_student_name(
-                self.students,
-                student_id
-            )
+            if face["known"]:
+
+                label = (
+                    f'{face["name"]} | Present'
+                )
+
+                color = (
+                    0,
+                    255,
+                    0
+                )
+
+            else:
+
+                label = "Unknown"
+
+                color = (
+                    0,
+                    165,
+                    255
+                )
 
 
             # -------------------------------------------
             # Face box
             # -------------------------------------------
 
-            bbox = face.bbox
-
-            x1, y1, x2, y2 = [
-                int(value)
-                for value in bbox
-            ]
-
-
-            # -------------------------------------------
-            # Draw face box
-            # -------------------------------------------
-
             cv2.rectangle(
-                output,
+                frame,
                 (x1, y1),
                 (x2, y2),
-                (0, 255, 0),
+                color,
                 2
             )
 
 
             # -------------------------------------------
-            # Student name
+            # Label background
             # -------------------------------------------
 
-            label = (
-                f"{student_name} | Present"
-            )
-
-
             cv2.putText(
-                output,
+                frame,
                 label,
                 (
                     x1,
@@ -430,28 +441,16 @@ class BASMAVideoProcessor(
                 ),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
-                (0, 255, 0),
+                color,
                 2
             )
-
-
-            # -------------------------------------------
-            # Mark attendance
-            # -------------------------------------------
-
-            self.mark_present(
-                student_id
-            )
-
-
-        return output
 
 
     # =====================================================
     # SAVE ACTIVITIES
     # =====================================================
 
-    def save_activities(
+    def save_detected_activities(
         self,
         activities
     ):
@@ -464,22 +463,21 @@ class BASMAVideoProcessor(
             return
 
 
-        current_time = time.time()
+        now_timestamp = time.time()
 
-
-        # -----------------------------------------------
-        # Don't save too frequently
-        # -----------------------------------------------
 
         if (
-            current_time - self.last_activity_time
+            now_timestamp
+            - self.last_activity_time
             < ACTIVITY_INTERVAL
         ):
 
             return
 
 
-        self.last_activity_time = current_time
+        self.last_activity_time = (
+            now_timestamp
+        )
 
 
         now = datetime.now()
@@ -488,16 +486,18 @@ class BASMAVideoProcessor(
             "%Y-%m-%d"
         )
 
-        clock = now.strftime(
+        current_time = now.strftime(
             "%H:%M:%S"
         )
 
 
         # -----------------------------------------------
-        # Save activities
+        # Save activities for recognized students
         # -----------------------------------------------
 
-        for student_id in self.present_students:
+        for student_id in (
+            self.present_students
+        ):
 
             for activity in activities:
 
@@ -506,17 +506,18 @@ class BASMAVideoProcessor(
                 )
 
 
-                previous_time = (
-                    self.last_saved_activity.get(
+                previous = (
+                    self.last_activity_saved
+                    .get(
                         key,
                         0
                     )
                 )
 
 
-                # Avoid duplicate records
                 if (
-                    current_time - previous_time
+                    now_timestamp
+                    - previous
                     < ACTIVITY_INTERVAL
                 ):
 
@@ -528,29 +529,31 @@ class BASMAVideoProcessor(
                     save_activity(
                         student_id=student_id,
                         date=date,
-                        time=clock,
+                        time=current_time,
                         activity=activity
                     )
 
-                    self.last_saved_activity[key] = (
-                        current_time
-                    )
+
+                    self.last_activity_saved[
+                        key
+                    ] = now_timestamp
+
 
                 except Exception as e:
 
                     print(
-                        "Activity save error:",
+                        "Activity error:",
                         e
                     )
 
 
     # =====================================================
-    # RECEIVE LIVE FRAME
+    # LIVE FRAME
     # =====================================================
 
     def recv(
         self,
-        frame: av.VideoFrame
+        frame
     ):
 
         # =================================================
@@ -563,14 +566,24 @@ class BASMAVideoProcessor(
 
 
         # =================================================
-        # 2. YOLO
+        # 2. YOLO TRACKING
+        # =================================================
+        #
+        # Same main idea as the Aarohi tutorial:
+        #
+        # model.track()
+        # persist=True
+        # ByteTrack
+        #
         # =================================================
 
         try:
 
-            results = self.model.predict(
+            results = self.model.track(
                 image,
+                persist=True,
                 conf=YOLO_CONFIDENCE,
+                tracker="bytetrack.yaml",
                 verbose=False
             )
 
@@ -578,14 +591,14 @@ class BASMAVideoProcessor(
             result = results[0]
 
 
-            # YOLO bounding boxes
+            # Draw YOLO boxes
             output = result.plot()
 
 
         except Exception as e:
 
             print(
-                "YOLO error:",
+                "YOLO tracking error:",
                 e
             )
 
@@ -613,6 +626,7 @@ class BASMAVideoProcessor(
                             box.cls[0]
                         )
 
+
                         activity = str(
                             self.model.names[
                                 class_id
@@ -620,41 +634,52 @@ class BASMAVideoProcessor(
                         )
 
 
-                        if activity not in activities:
+                        if activity not in (
+                            activities
+                        ):
 
                             activities.append(
                                 activity
                             )
 
+
             except Exception as e:
 
                 print(
-                    "Activity detection error:",
+                    "Activity reading error:",
                     e
                 )
 
 
         # =================================================
-        # 4. FACE RECOGNITION
+        # 4. FACE DETECTION
         # =================================================
 
-        output = self.process_faces(
-            image,
+        self.detect_faces(
+            image
+        )
+
+
+        # =================================================
+        # 5. DRAW FACE BOXES
+        # =================================================
+
+        self.draw_faces(
             output
         )
 
 
         # =================================================
-        # 5. SAVE ACTIVITY
+        # 6. SAVE ACTIVITY
         # =================================================
 
-        self.save_activities(
+        self.save_detected_activities(
             activities
         )
 
 
         # =================================================
-        # 6. LIVE STATUS
+        # 7. LIVE STATUS
         # =================================================
 
         status = (
@@ -675,7 +700,7 @@ class BASMAVideoProcessor(
 
 
         # =================================================
-        # 7. RETURN LIVE FRAME
+        # 8. RETURN FRAME
         # =================================================
 
         return av.VideoFrame.from_ndarray(
@@ -685,23 +710,24 @@ class BASMAVideoProcessor(
 
 
 # =========================================================
-# RENDER LIVE CLASSROOM
+# LIVE CLASSROOM PAGE
 # =========================================================
 
 def render_live_classroom():
 
     st.markdown(
-        "### 📸 Live Camera Detection"
+        "### 📸 Live Classroom"
     )
 
-    st.write(
-        "BASMA monitors classroom attendance "
-        "and activities in real time."
+    st.markdown(
+        "BASMA detects student faces, "
+        "attendance, and classroom activities "
+        "in real time."
     )
 
 
     # =====================================================
-    # LIVE CAMERA
+    # START CAMERA
     # =====================================================
 
     webrtc_streamer(
@@ -718,47 +744,18 @@ def render_live_classroom():
 
         media_stream_constraints={
             "video": True,
-            "audio": False,
+            "audio": False
         },
 
-        async_processing=True,
+        async_processing=True
     )
 
 
     # =====================================================
-    # STATUS INFORMATION
+    # INFO
     # =====================================================
 
-    st.divider()
-
-    col1, col2, col3 = st.columns(3)
-
-
-    with col1:
-
-        st.metric(
-            "AI Model",
-            "BASMA YOLO"
-        )
-
-
-    with col2:
-
-        st.metric(
-            "Confidence",
-            f"{YOLO_CONFIDENCE:.0%}"
-        )
-
-
-    with col3:
-
-        st.metric(
-            "Mode",
-            "Live"
-        )
-
-
     st.caption(
-        "Live Camera → Face Recognition → "
-        "Attendance + YOLO Activity Detection"
+        "Face Recognition → Attendance | "
+        "YOLO Tracking → Activities"
     )
