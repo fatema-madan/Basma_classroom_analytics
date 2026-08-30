@@ -1,19 +1,9 @@
-import av
 import cv2
-import time
-import threading
 import streamlit as st
+import pandas as pd
 
-from datetime import datetime
-
+from PIL import Image
 from ultralytics import YOLO
-
-from streamlit_webrtc import (
-    webrtc_streamer,
-    VideoProcessorBase,
-    WebRtcMode,
-    RTCConfiguration,
-)
 
 from utils.data_manager import (
     load_students,
@@ -34,30 +24,7 @@ from utils.face_utils import (
 
 MODEL_PATH = "models/basma_yolo.pt"
 
-YOLO_CONFIDENCE = 0.40
-
-FACE_INTERVAL = 1.0
-
-ATTENDANCE_INTERVAL = 5.0
-
-ACTIVITY_INTERVAL = 5.0
-
-
-# =========================================================
-# WEBRTC CONFIGURATION
-# =========================================================
-
-RTC_CONFIGURATION = RTCConfiguration(
-    {
-        "iceServers": [
-            {
-                "urls": [
-                    "stun:stun.l.google.com:19302"
-                ]
-            }
-        ]
-    }
-)
+CONFIDENCE = 0.40
 
 
 # =========================================================
@@ -65,7 +32,7 @@ RTC_CONFIGURATION = RTCConfiguration(
 # =========================================================
 
 @st.cache_resource
-def load_yolo_model():
+def load_model():
 
     return YOLO(
         MODEL_PATH
@@ -73,493 +40,380 @@ def load_yolo_model():
 
 
 # =========================================================
-# VIDEO PROCESSOR
+# LOAD DATA
 # =========================================================
 
-class BASMAVideoProcessor(VideoProcessorBase):
+@st.cache_resource
+def load_face_data():
 
-    def __init__(self):
+    students = load_students()
 
-        # -------------------------------------------------
-        # Models
-        # -------------------------------------------------
+    embeddings = load_embeddings()
 
-        self.model = load_yolo_model()
-
-        self.students = load_students()
-
-        self.embeddings = load_embeddings()
+    return students, embeddings
 
 
-        # -------------------------------------------------
-        # Face recognition timing
-        # -------------------------------------------------
+# =========================================================
+# GET STUDENT NAME
+# =========================================================
 
-        self.last_face_time = 0
+def get_student_name(
+    students,
+    student_id
+):
+
+    if students is None:
+        return str(student_id)
+
+    if students.empty:
+        return str(student_id)
+
+    rows = students[
+        students["student_id"]
+        .astype(str)
+        == str(student_id)
+    ]
+
+    if rows.empty:
+        return str(student_id)
+
+    return str(
+        rows.iloc[0]["student_name"]
+    )
 
 
-        # -------------------------------------------------
-        # Recognized students
-        # -------------------------------------------------
+# =========================================================
+# LIVE CLASSROOM
+# =========================================================
 
-        self.recognized_students = {}
+def render_live_classroom():
 
+    st.markdown(
+        "### 📸 Live Camera"
+    )
 
-        # -------------------------------------------------
-        # Attendance
-        # -------------------------------------------------
-
-        self.attendance_saved = set()
-
-
-        # -------------------------------------------------
-        # Activity logging
-        # -------------------------------------------------
-
-        self.last_activity_saved = {}
-
-
-        # -------------------------------------------------
-        # Thread lock
-        # -------------------------------------------------
-
-        self.lock = threading.Lock()
+    st.write(
+        "Take a classroom photo to detect "
+        "students and activities."
+    )
 
 
     # =====================================================
-    # GET STUDENT NAME
+    # CAMERA INPUT
     # =====================================================
 
-    def get_student_name(
-        self,
-        student_id
+    camera_image = st.camera_input(
+        "Open Camera"
+    )
+
+
+    # =====================================================
+    # WAIT FOR PHOTO
+    # =====================================================
+
+    if camera_image is None:
+
+        st.info(
+            "📷 Open the camera and take a photo."
+        )
+
+        return
+
+
+    # =====================================================
+    # LOAD IMAGE
+    # =====================================================
+
+    image = Image.open(
+        camera_image
+    ).convert("RGB")
+
+
+    image_bgr = cv2.cvtColor(
+        __import__("numpy").array(image),
+        cv2.COLOR_RGB2BGR
+    )
+
+
+    # =====================================================
+    # LOAD MODELS
+    # =====================================================
+
+    model = load_model()
+
+    students, embeddings = (
+        load_face_data()
+    )
+
+
+    # =====================================================
+    # AI ANALYSIS
+    # =====================================================
+
+    with st.spinner(
+        "🤖 BASMA is analyzing..."
     ):
 
-        if self.students is None:
-            return str(student_id)
+        # -----------------------------------------------
+        # YOLO
+        # -----------------------------------------------
 
-
-        if self.students.empty:
-            return str(student_id)
-
-
-        if "student_id" not in self.students.columns:
-            return str(student_id)
-
-
-        rows = self.students[
-            self.students["student_id"]
-            .astype(str)
-            == str(student_id)
-        ]
-
-
-        if rows.empty:
-            return str(student_id)
-
-
-        if "student_name" not in rows.columns:
-            return str(student_id)
-
-
-        return str(
-            rows.iloc[0]["student_name"]
+        results = model.predict(
+            image_bgr,
+            conf=CONFIDENCE,
+            verbose=False
         )
 
-
-    # =====================================================
-    # SAVE ATTENDANCE
-    # =====================================================
-
-    def save_student_attendance(
-        self,
-        student_id
-    ):
-
-        student_id = str(
-            student_id
-        )
+        result = results[0]
 
 
-        if student_id in self.attendance_saved:
-            return
+        # -----------------------------------------------
+        # YOLO annotated image
+        # -----------------------------------------------
+
+        output = result.plot()
 
 
-        now = datetime.now()
+        # -----------------------------------------------
+        # Activities
+        # -----------------------------------------------
 
-        date = now.strftime(
-            "%Y-%m-%d"
-        )
-
-        current_time = now.strftime(
-            "%H:%M:%S"
-        )
+        activities = []
 
 
-        try:
+        if result.boxes is not None:
 
-            save_attendance(
-                student_id=student_id,
-                date=date,
-                time=current_time
-            )
+            for box in result.boxes:
 
+                try:
 
-            self.attendance_saved.add(
-                student_id
-            )
+                    class_id = int(
+                        box.cls[0]
+                    )
 
+                    activity = str(
+                        model.names[class_id]
+                    )
 
-        except Exception as e:
+                    if activity not in activities:
 
-            print(
-                "Attendance error:",
-                e
-            )
+                        activities.append(
+                            activity
+                        )
 
+                except Exception:
 
-    # =====================================================
-    # FACE DETECTION + RECOGNITION
-    # =====================================================
-
-    def detect_faces(
-        self,
-        frame
-    ):
-
-        current_time = time.time()
+                    continue
 
 
-        # Don't run face recognition on every frame
-        if (
-            current_time - self.last_face_time
-            < FACE_INTERVAL
-        ):
+        # =================================================
+        # FACE DETECTION
+        # =================================================
 
-            return
-
-
-        self.last_face_time = current_time
+        detected_students = []
 
 
         try:
 
             faces = face_app.get(
-                frame
+                image_bgr
             )
+
+
+            for face in faces:
+
+                x1, y1, x2, y2 = [
+                    int(value)
+                    for value in face.bbox
+                ]
+
+
+                # -----------------------------------------
+                # Face Recognition
+                # -----------------------------------------
+
+                student_id = find_student(
+                    face.embedding
+                )
+
+
+                if student_id is not None:
+
+                    student_id = str(
+                        student_id
+                    )
+
+
+                    student_name = (
+                        get_student_name(
+                            students,
+                            student_id
+                        )
+                    )
+
+
+                    # -------------------------------------
+                    # Attendance
+                    # -------------------------------------
+
+                    try:
+
+                        save_attendance(
+                            student_id=student_id
+                        )
+
+                    except Exception as e:
+
+                        print(
+                            "Attendance error:",
+                            e
+                        )
+
+
+                    detected_students.append(
+                        {
+                            "student_id": student_id,
+                            "name": student_name
+                        }
+                    )
+
+
+                    # -------------------------------------
+                    # Face Box
+                    # -------------------------------------
+
+                    color = (
+                        0,
+                        255,
+                        0
+                    )
+
+
+                    label = (
+                        f"{student_name} | Present"
+                    )
+
+
+                else:
+
+                    color = (
+                        0,
+                        165,
+                        255
+                    )
+
+                    label = "Unknown"
+
+
+                # -----------------------------------------
+                # Draw Face Box
+                # -----------------------------------------
+
+                cv2.rectangle(
+                    output,
+                    (x1, y1),
+                    (x2, y2),
+                    color,
+                    3
+                )
+
+
+                cv2.putText(
+                    output,
+                    label,
+                    (
+                        x1,
+                        max(
+                            30,
+                            y1 - 10
+                        )
+                    ),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.65,
+                    color,
+                    2
+                )
+
 
         except Exception as e:
 
-            print(
-                "Face detection error:",
-                e
-            )
-
-            return
-
-
-        new_faces = []
-
-
-        for face in faces:
-
-            # -------------------------------------------------
-            # Face bounding box
-            # -------------------------------------------------
-
-            x1, y1, x2, y2 = [
-                int(value)
-                for value in face.bbox
-            ]
-
-
-            # -------------------------------------------------
-            # Face recognition
-            # -------------------------------------------------
-
-            student_id = find_student(
-                face.embedding
-            )
-
-
-            if student_id is not None:
-
-                student_id = str(
-                    student_id
-                )
-
-
-                student_name = (
-                    self.get_student_name(
-                        student_id
-                    )
-                )
-
-
-                # ---------------------------------------------
-                # Save attendance
-                # ---------------------------------------------
-
-                self.save_student_attendance(
-                    student_id
-                )
-
-
-                # ---------------------------------------------
-                # Save recognized face
-                # ---------------------------------------------
-
-                self.recognized_students[
-                    student_id
-                ] = {
-                    "name": student_name,
-                    "box": (
-                        x1,
-                        y1,
-                        x2,
-                        y2
-                    ),
-                    "last_seen": current_time,
-                }
-
-
-                new_faces.append(
-                    {
-                        "name": student_name,
-                        "student_id": student_id,
-                        "box": (
-                            x1,
-                            y1,
-                            x2,
-                            y2
-                        ),
-                        "known": True,
-                    }
-                )
-
-
-            else:
-
-                new_faces.append(
-                    {
-                        "name": "Unknown",
-                        "student_id": None,
-                        "box": (
-                            x1,
-                            y1,
-                            x2,
-                            y2
-                        ),
-                        "known": False,
-                    }
-                )
-
-
-        return new_faces
-
-
-    # =====================================================
-    # DRAW FACE BOXES
-    # =====================================================
-
-    def draw_faces(
-        self,
-        frame,
-        faces
-    ):
-
-        for face in faces:
-
-            x1, y1, x2, y2 = (
-                face["box"]
-            )
-
-
-            if face["known"]:
-
-                label = (
-                    f'{face["name"]} | Present'
-                )
-
-                color = (
-                    0,
-                    255,
-                    0
-                )
-
-            else:
-
-                label = "Unknown"
-
-                color = (
-                    0,
-                    165,
-                    255
-                )
-
-
-            # -------------------------------------------------
-            # Face bounding box
-            # -------------------------------------------------
-
-            cv2.rectangle(
-                frame,
-                (x1, y1),
-                (x2, y2),
-                color,
-                2
-            )
-
-
-            # -------------------------------------------------
-            # Label
-            # -------------------------------------------------
-
-            cv2.putText(
-                frame,
-                label,
-                (
-                    x1,
-                    max(
-                        25,
-                        y1 - 10
-                    )
-                ),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                color,
-                2
+            st.warning(
+                f"Face detection error: {e}"
             )
 
 
     # =====================================================
-    # GET YOLO ACTIVITIES
+    # DISPLAY RESULT
     # =====================================================
 
-    def get_activities(
-        self,
-        result
-    ):
-
-        activities = []
-
-
-        if result is None:
-            return activities
-
-
-        if result.boxes is None:
-            return activities
-
-
-        for box in result.boxes:
-
-            try:
-
-                class_id = int(
-                    box.cls[0]
-                )
-
-
-                activity = str(
-                    self.model.names[
-                        class_id
-                    ]
-                )
-
-
-                if activity not in activities:
-
-                    activities.append(
-                        activity
-                    )
-
-            except Exception:
-
-                continue
-
-
-        return activities
+    st.image(
+        cv2.cvtColor(
+            output,
+            cv2.COLOR_BGR2RGB
+        ),
+        caption="BASMA Detection Result",
+        use_container_width=True
+    )
 
 
     # =====================================================
-    # SAVE ACTIVITIES
+    # ATTENDANCE
     # =====================================================
 
-    def save_activities(
-        self,
-        activities
-    ):
-
-        if not activities:
-            return
+    st.markdown(
+        "### 👥 Attendance"
+    )
 
 
-        if not self.recognized_students:
-            return
+    if detected_students:
 
+        for student in detected_students:
 
-        current_time = time.time()
+            st.success(
+                f'🟢 {student["name"]} — Present'
+            )
 
+    else:
 
-        now = datetime.now()
-
-        date = now.strftime(
-            "%Y-%m-%d"
-        )
-
-        clock = now.strftime(
-            "%H:%M:%S"
+        st.warning(
+            "No registered student detected."
         )
 
 
-        # -------------------------------------------------
-        # For every recognized student
-        # -------------------------------------------------
+    # =====================================================
+    # ACTIVITIES
+    # =====================================================
 
-        for student_id in (
-            self.recognized_students
-        ):
+    st.markdown(
+        "### 🎯 Detected Activities"
+    )
+
+
+    if activities:
+
+        for activity in activities:
+
+            st.info(
+                f"Activity: {activity}"
+            )
+
+
+        # -----------------------------------------------
+        # Save activities
+        # -----------------------------------------------
+
+        for student in detected_students:
 
             for activity in activities:
-
-                key = (
-                    f"{student_id}_{activity}"
-                )
-
-
-                previous_time = (
-                    self.last_activity_saved.get(
-                        key,
-                        0
-                    )
-                )
-
-
-                # Prevent duplicate logging
-                if (
-                    current_time
-                    - previous_time
-                    < ACTIVITY_INTERVAL
-                ):
-
-                    continue
-
 
                 try:
 
                     save_activity(
-                        student_id=student_id,
-                        date=date,
-                        time=clock,
+                        student_id=student[
+                            "student_id"
+                        ],
                         activity=activity
                     )
-
-
-                    self.last_activity_saved[
-                        key
-                    ] = current_time
-
 
                 except Exception as e:
 
@@ -568,217 +422,8 @@ class BASMAVideoProcessor(VideoProcessorBase):
                         e
                     )
 
+    else:
 
-    # =====================================================
-    # PROCESS LIVE FRAME
-    # =====================================================
-
-    def recv(
-        self,
-        frame
-    ):
-
-        # =================================================
-        # CAMERA INPUT
-        # =================================================
-
-        image = frame.to_ndarray(
-            format="bgr24"
+        st.info(
+            "No classroom activity detected."
         )
-
-
-        # =================================================
-        # YOLO TRACKING
-        # =================================================
-
-        try:
-
-            results = self.model.track(
-
-                image,
-
-                persist=True,
-
-                conf=YOLO_CONFIDENCE,
-
-                tracker="bytetrack.yaml",
-
-                verbose=False,
-
-            )
-
-
-            result = results[0]
-
-
-            # Draw YOLO bounding boxes
-            output = result.plot()
-
-
-        except Exception as e:
-
-            print(
-                "YOLO error:",
-                e
-            )
-
-            result = None
-
-            output = image.copy()
-
-
-        # =================================================
-        # ACTIVITIES
-        # =================================================
-
-        activities = (
-            self.get_activities(
-                result
-            )
-        )
-
-
-        # =================================================
-        # FACE DETECTION
-        # =================================================
-
-        faces = self.detect_faces(
-            image
-        )
-
-
-        # =================================================
-        # DRAW FACE BOXES
-        # =================================================
-
-        if faces:
-
-            self.draw_faces(
-                output,
-                faces
-            )
-
-
-        # =================================================
-        # SAVE ACTIVITIES
-        # =================================================
-
-        self.save_activities(
-            activities
-        )
-
-
-        # =================================================
-        # LIVE STATUS
-        # =================================================
-
-        status = (
-            f"Present: "
-            f"{len(self.attendance_saved)}"
-        )
-
-
-        cv2.putText(
-            output,
-            status,
-            (20, 35),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (0, 255, 0),
-            2
-        )
-
-
-        # =================================================
-        # RETURN LIVE VIDEO
-        # =================================================
-
-        return av.VideoFrame.from_ndarray(
-            output,
-            format="bgr24"
-        )
-
-
-# =========================================================
-# RENDER LIVE CLASSROOM
-# =========================================================
-
-def render_live_classroom():
-
-    st.markdown(
-        "### 📸 Live Classroom"
-    )
-
-
-    st.write(
-        "Start the camera to detect "
-        "students, attendance, and "
-        "classroom activities in real time."
-    )
-
-
-    # =====================================================
-    # LIVE CAMERA INPUT
-    # =====================================================
-
-    webrtc_streamer(
-
-        key="basma-live-classroom",
-
-        mode=WebRtcMode.SENDRECV,
-
-        video_processor_factory=(
-            BASMAVideoProcessor
-        ),
-
-        rtc_configuration=(
-            RTC_CONFIGURATION
-        ),
-
-        media_stream_constraints={
-            "video": True,
-            "audio": False,
-        },
-
-        async_processing=True,
-    )
-
-
-    # =====================================================
-    # INFORMATION
-    # =====================================================
-
-    st.divider()
-
-
-    col1, col2, col3 = st.columns(3)
-
-
-    with col1:
-
-        st.metric(
-            "Camera",
-            "Live"
-        )
-
-
-    with col2:
-
-        st.metric(
-            "Detection",
-            "YOLO + Face"
-        )
-
-
-    with col3:
-
-        st.metric(
-            "Tracking",
-            "ByteTrack"
-        )
-
-
-    st.caption(
-        "Live Camera → Face Recognition → "
-        "Attendance + YOLO Activity Tracking"
-    )
