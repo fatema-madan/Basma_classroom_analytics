@@ -7,3 +7,4 @@ Pillow
 insightface
 onnxruntime
 plotly
+streamlit-webrtc
