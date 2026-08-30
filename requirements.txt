@@ -8,3 +8,4 @@ insightface
 onnxruntime
 plotly
 streamlit-webrtc
+av
