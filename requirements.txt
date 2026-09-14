@@ -1,0 +1,14 @@
+streamlit>=1.51.0
+ultralytics
+opencv-python-headless==4.10.0.84
+numpy
+pandas
+Pillow
+insightface
+onnxruntime
+plotly
+streamlit-webrtc
+av
+gspread
+google-auth
+openpyxl
